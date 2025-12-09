@@ -1,0 +1,631 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import '../../providers/activity_provider.dart';
+import '../../models/activity_model.dart';
+import '../../config/api_config.dart';
+import '../../widgets/adaptive_image.dart';
+import 'patroli_form_screen.dart';
+
+class PatroliListScreen extends StatefulWidget {
+  const PatroliListScreen({super.key});
+
+  @override
+  State<PatroliListScreen> createState() => _PatroliListScreenState();
+}
+
+class _PatroliListScreenState extends State<PatroliListScreen> {
+  // Default: bulan ini (tanggal 1 sampai hari ini)
+  late DateTime _startDate = _getDefaultStartDate();
+  late DateTime _endDate = _getDefaultEndDate();
+  int _currentPage = 1;
+  final int _itemsPerPage = 10;
+
+  static DateTime _getDefaultStartDate() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, 1);
+  }
+
+  static DateTime _getDefaultEndDate() {
+    return DateTime.now();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Set default ke bulan ini
+    final now = DateTime.now();
+    _startDate = DateTime(now.year, now.month, 1);
+    _endDate = now;
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<ActivityProvider>(context, listen: false).loadActivities();
+    });
+  }
+
+  Future<void> _selectDateRange(BuildContext context) async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
+      locale: const Locale('id', 'ID'),
+      helpText: 'Pilih Rentang Tanggal',
+      cancelText: 'Batal',
+      confirmText: 'Pilih',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Theme.of(context).primaryColor,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black87,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && picked != DateTimeRange(start: _startDate, end: _endDate)) {
+      setState(() {
+        _startDate = picked.start;
+        _endDate = picked.end;
+        _currentPage = 1; // Reset to first page
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Laporan Patroli'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.date_range),
+            onPressed: () => _selectDateRange(context),
+            tooltip: 'Pilih Rentang Tanggal',
+          ),
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const PatroliFormScreen(),
+                ),
+              ).then((_) {
+                // Refresh list after form submission
+                Provider.of<ActivityProvider>(context, listen: false).loadActivities();
+              });
+            },
+            tooltip: 'Tambah Patroli',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Date Range Filter Card
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue[200]!),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.calendar_today, color: Colors.blue[700], size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Rentang Tanggal',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${DateFormat('dd MMM yyyy', 'id_ID').format(_startDate)} - ${DateFormat('dd MMM yyyy', 'id_ID').format(_endDate)}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue[900],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.edit, color: Colors.blue[700], size: 20),
+                  onPressed: () => _selectDateRange(context),
+                  tooltip: 'Ubah Rentang Tanggal',
+                ),
+              ],
+            ),
+          ),
+          // Patroli List
+          Expanded(
+            child: Consumer<ActivityProvider>(
+              builder: (context, activityProvider, _) {
+                if (activityProvider.isLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (activityProvider.error != null) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+                        const SizedBox(height: 16),
+                        Text(
+                          activityProvider.error!,
+                          style: TextStyle(color: Colors.red[700]),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () {
+                            activityProvider.loadActivities();
+                          },
+                          child: const Text('Coba Lagi'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                // Gabungkan todayActivity dengan recentActivities untuk filter patroli
+                final allActivities = <DailyActivity>[];
+                if (activityProvider.todayActivity != null) {
+                  allActivities.add(activityProvider.todayActivity!);
+                }
+                allActivities.addAll(activityProvider.recentActivities);
+                
+                // Filter activities yang merupakan patroli:
+                // 1. Punya latitude/longitude (GPS)
+                // 2. Punya checkpoints
+                // 3. Notes mengandung "📍" (indikator patroli dari backend)
+                final patroliList = allActivities.where((activity) {
+                  final hasGPS = activity.latitude != null && activity.longitude != null;
+                  final hasCheckpoints = activity.checkpoints != null && activity.checkpoints!.isNotEmpty;
+                  final hasPatroliMarker = activity.notes != null && activity.notes!.contains('📍');
+                  
+                  final isPatroli = hasGPS || hasCheckpoints || hasPatroliMarker;
+                  
+                  if (!isPatroli) return false;
+                  
+                  // Filter by date range
+                  final activityDate = DateTime.parse(activity.date);
+                  if (activityDate.isBefore(_startDate)) return false;
+                  if (activityDate.isAfter(_endDate.add(const Duration(days: 1)))) return false;
+                  
+                  return true;
+                }).toList();
+
+                // Calculate pagination
+                final totalItems = patroliList.length;
+                final totalPages = totalItems > 0 ? (totalItems / _itemsPerPage).ceil() : 1;
+                final startIndex = (_currentPage - 1) * _itemsPerPage;
+                final endIndex = startIndex + _itemsPerPage;
+                final paginatedPatroliList = patroliList.sublist(
+                  startIndex.clamp(0, totalItems),
+                  endIndex.clamp(0, totalItems),
+                );
+
+                if (patroliList.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.security, size: 64, color: Colors.grey[400]),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Belum ada laporan patroli',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Tekan tombol + untuk membuat laporan patroli baru',
+                          style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return RefreshIndicator(
+                  onRefresh: () => activityProvider.loadActivities(),
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: paginatedPatroliList.length,
+                          itemBuilder: (context, index) {
+                            final patroli = paginatedPatroliList[index];
+                            return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: InkWell(
+                    onTap: () {
+                      // Show detail
+                      _showPatroliDetail(context, patroli);
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue[50],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  DateFormat('dd MMM yyyy', 'id_ID').format(
+                                    DateTime.parse(patroli.date),
+                                  ),
+                                  style: TextStyle(
+                                    color: Colors.blue[900],
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              const Spacer(),
+                              if (patroli.photoUrls != null && patroli.photoUrls!.isNotEmpty)
+                                Row(
+                                  children: [
+                                    Icon(Icons.camera_alt, size: 16, color: Colors.grey[600]),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${patroli.photoUrls!.length} foto',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          // Tampilkan locationName jika ada, jika tidak gunakan summary
+                          Text(
+                            (patroli.locationName != null && patroli.locationName!.isNotEmpty)
+                                ? patroli.locationName!
+                                : patroli.summary,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // Tampilkan deskripsi dari notes (bagian setelah locationName)
+                          if (patroli.notes != null && patroli.notes!.isNotEmpty) ...[
+                            Builder(
+                              builder: (context) {
+                                String? description;
+                                if (patroli.notes!.contains('📍') && patroli.notes!.contains('\n')) {
+                                  description = patroli.notes!.split('\n').skip(1).join('\n').trim();
+                                  if (description.isEmpty) description = null;
+                                } else if (!patroli.notes!.startsWith('📍')) {
+                                  description = patroli.notes!;
+                                }
+                                
+                                if (description != null && description.isNotEmpty) {
+                                  return Text(
+                                    description,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey[700],
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  );
+                                }
+                                return const SizedBox.shrink();
+                              },
+                            ),
+                          ],
+                          if (patroli.latitude != null && patroli.longitude != null) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(Icons.location_on, size: 14, color: Colors.grey[600]),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${patroli.latitude!.toStringAsFixed(6)}, ${patroli.longitude!.toStringAsFixed(6)}',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+                          },
+                        ),
+                      ),
+                      // Pagination
+                      if (totalPages > 1)
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            border: Border(top: BorderSide(color: Colors.grey[200]!)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Halaman $_currentPage dari $totalPages',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_left),
+                                    onPressed: _currentPage > 1
+                                        ? () {
+                                            setState(() {
+                                              _currentPage--;
+                                            });
+                                          }
+                                        : null,
+                                  ),
+                                  Text(
+                                    '$_currentPage / $totalPages',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_right),
+                                    onPressed: _currentPage < totalPages
+                                        ? () {
+                                            setState(() {
+                                              _currentPage++;
+                                            });
+                                          }
+                                        : null,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPatroliDetail(BuildContext context, DailyActivity patroli) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.8,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+              ),
+              child: Row(
+                children: [
+                  const Text(
+                    'Detail Patroli',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Date
+                    Row(
+                      children: [
+                        Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                        const SizedBox(width: 8),
+                        Text(
+                          DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(
+                            DateTime.parse(patroli.date),
+                          ),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Nama Tempat (locationName atau summary)
+                    const Text(
+                      'Nama Tempat',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      (patroli.locationName != null && patroli.locationName!.isNotEmpty)
+                          ? patroli.locationName!
+                          : patroli.summary,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    // Deskripsi dari notes
+                    if (patroli.notes != null && patroli.notes!.isNotEmpty) ...[
+                      Builder(
+                        builder: (context) {
+                          String? description;
+                          if (patroli.notes!.contains('📍') && patroli.notes!.contains('\n')) {
+                            description = patroli.notes!.split('\n').skip(1).join('\n').trim();
+                            if (description.isEmpty) description = null;
+                          } else if (!patroli.notes!.startsWith('📍')) {
+                            description = patroli.notes!;
+                          }
+                          
+                          if (description != null && description.isNotEmpty) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Deskripsi',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  description,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      ),
+                    ],
+                    // Photos
+                    if (patroli.photoUrls != null && patroli.photoUrls!.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Foto',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: patroli.photoUrls!.map((photoUrl) {
+                          final fullUrl = ApiConfig.getImageUrl(photoUrl);
+                          return GestureDetector(
+                            onTap: () {
+                              // Show full screen image dengan aspect ratio yang benar
+                              showDialog(
+                                context: context,
+                                builder: (context) => FullScreenImageDialog.network(
+                                  imageUrl: fullUrl,
+                                ),
+                              );
+                            },
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                width: 100,
+                                height: 133, // 100 * 4/3 untuk portrait (lebih tinggi)
+                                child: Image.network(
+                                  fullUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      color: Colors.grey[200],
+                                      child: const Icon(Icons.broken_image),
+                                    );
+                                  },
+                                  loadingBuilder: (context, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return Container(
+                                      color: Colors.grey[200],
+                                      child: const Center(
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                    // Location coordinates
+                    if (patroli.latitude != null && patroli.longitude != null) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Icon(Icons.my_location, size: 16, color: Colors.grey[600]),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Koordinat: ${patroli.latitude!.toStringAsFixed(6)}, ${patroli.longitude!.toStringAsFixed(6)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+}
+

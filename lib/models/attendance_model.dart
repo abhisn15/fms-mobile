@@ -45,6 +45,23 @@ class AttendanceRecord {
       needsValidation: json['needsValidation'] as bool? ?? false,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'userId': userId,
+      'date': date,
+      'status': status,
+      'checkIn': checkIn,
+      'checkOut': checkOut,
+      'shiftId': shiftId,
+      'notes': notes,
+      'photoUrl': photoUrl,
+      'location': location?.toJson(),
+      'isAutoCheckout': isAutoCheckout,
+      'needsValidation': needsValidation,
+    };
+  }
 }
 
 class Location {
@@ -94,6 +111,13 @@ class AttendancePayload {
           .map((e) => AttendanceRecord.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'today': today?.toJson(),
+      'recent': recent.map((e) => e.toJson()).toList(),
+    };
   }
 }
 

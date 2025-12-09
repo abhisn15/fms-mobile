@@ -5,10 +5,12 @@ import 'package:image_picker/image_picker.dart';
 
 class CameraScreen extends StatefulWidget {
   final String title;
+  final bool allowGallery;
 
   const CameraScreen({
     super.key,
     required this.title,
+    this.allowGallery = true,
   });
 
   @override
@@ -65,6 +67,11 @@ class _CameraScreenState extends State<CameraScreen> {
       final file = File(image.path);
       debugPrint('[CameraScreen] ✓ Photo captured: ${file.path}');
       
+      // Mark as not initialized to prevent rebuild after dispose
+      setState(() {
+        _isInitialized = false;
+      });
+      
       // Dispose camera before navigating back to prevent dead thread warnings
       await _disposeCamera();
       
@@ -73,15 +80,12 @@ class _CameraScreenState extends State<CameraScreen> {
     } catch (e) {
       debugPrint('[CameraScreen] ✗ Error capturing photo: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal mengambil foto: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
         setState(() {
           _isCapturing = false;
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal mengambil foto: $e')),
+        );
       }
     }
   }
@@ -92,8 +96,13 @@ class _CameraScreenState extends State<CameraScreen> {
       final image = await _imagePicker.pickImage(source: ImageSource.gallery);
       if (image != null && mounted) {
         debugPrint('[CameraScreen] ✓ Image selected: ${image.path}');
+        // Mark as not initialized to prevent rebuild after dispose
+        setState(() {
+          _isInitialized = false;
+        });
         // Dispose camera before navigating back
         await _disposeCamera();
+        if (!mounted) return;
         Navigator.of(context).pop(File(image.path));
       }
     } catch (e) {
@@ -122,13 +131,14 @@ class _CameraScreenState extends State<CameraScreen> {
           debugPrint('[CameraScreen] ✓ Camera disposed successfully');
         } else {
           debugPrint('[CameraScreen] Disposing uninitialized camera controller...');
-          _controller!.dispose();
+          await _controller!.dispose();
         }
       } catch (e) {
         debugPrint('[CameraScreen] ⚠ Camera disposal error (ignored): $e');
         // Ignore disposal errors - camera may already be disposed
       } finally {
         _controller = null;
+        _isInitialized = false;
       }
     }
   }
@@ -139,7 +149,7 @@ class _CameraScreenState extends State<CameraScreen> {
       appBar: AppBar(
         title: Text(widget.title),
       ),
-      body: _isInitialized && _controller != null
+      body: _isInitialized && _controller != null && _controller!.value.isInitialized
           ? Stack(
               children: [
                 CameraPreview(_controller!),
@@ -160,12 +170,15 @@ class _CameraScreenState extends State<CameraScreen> {
                       ),
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.photo_library, color: Colors.white),
-                          onPressed: _pickFromGallery,
-                        ),
+                        if (widget.allowGallery) ...[
+                          IconButton(
+                            icon: const Icon(Icons.photo_library, color: Colors.white),
+                            onPressed: _pickFromGallery,
+                          ),
+                          const SizedBox(width: 24),
+                        ],
                         GestureDetector(
                           onTap: _isCapturing ? null : _capturePhoto,
                           child: Container(
@@ -183,7 +196,7 @@ class _CameraScreenState extends State<CameraScreen> {
                                 : const Icon(Icons.camera_alt, size: 40),
                           ),
                         ),
-                        const SizedBox(width: 48),
+                        if (widget.allowGallery) const SizedBox(width: 48),
                       ],
                     ),
                   ),

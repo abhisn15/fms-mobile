@@ -1,0 +1,279 @@
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+
+/// Service untuk menyimpan dan mengambil data offline
+class OfflineStorageService {
+  static const String _attendanceKey = 'offline_attendance';
+  static const String _shiftsKey = 'offline_shifts';
+  static const String _activitiesKey = 'offline_activities';
+  static const String _requestsKey = 'offline_requests';
+  static const String _pendingCheckInKey = 'pending_checkin';
+  static const String _pendingCheckOutKey = 'pending_checkout';
+  static const String _pendingActivitiesKey = 'pending_activities';
+  static const String _pendingRequestsKey = 'pending_requests';
+
+  /// Simpan attendance data
+  Future<void> saveAttendance(Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_attendanceKey, jsonEncode(data));
+      debugPrint('[OfflineStorage] Attendance data saved');
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error saving attendance: $e');
+    }
+  }
+
+  /// Ambil attendance data
+  Future<Map<String, dynamic>?> getAttendance() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = prefs.getString(_attendanceKey);
+      if (data != null) {
+        return jsonDecode(data) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error getting attendance: $e');
+      return null;
+    }
+  }
+
+  /// Simpan shifts data
+  Future<void> saveShifts(Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_shiftsKey, jsonEncode(data));
+      debugPrint('[OfflineStorage] Shifts data saved');
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error saving shifts: $e');
+    }
+  }
+
+  /// Ambil shifts data
+  Future<Map<String, dynamic>?> getShifts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = prefs.getString(_shiftsKey);
+      if (data != null) {
+        return jsonDecode(data) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error getting shifts: $e');
+      return null;
+    }
+  }
+
+  /// Simpan activities data
+  Future<void> saveActivities(Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_activitiesKey, jsonEncode(data));
+      debugPrint('[OfflineStorage] Activities data saved');
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error saving activities: $e');
+    }
+  }
+
+  /// Ambil activities data
+  Future<Map<String, dynamic>?> getActivities() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = prefs.getString(_activitiesKey);
+      if (data != null) {
+        return jsonDecode(data) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error getting activities: $e');
+      return null;
+    }
+  }
+
+  /// Simpan requests data
+  Future<void> saveRequests(Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_requestsKey, jsonEncode(data));
+      debugPrint('[OfflineStorage] Requests data saved');
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error saving requests: $e');
+    }
+  }
+
+  /// Ambil requests data
+  Future<Map<String, dynamic>?> getRequests() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = prefs.getString(_requestsKey);
+      if (data != null) {
+        return jsonDecode(data) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error getting requests: $e');
+      return null;
+    }
+  }
+
+  /// Simpan pending check-in
+  Future<void> savePendingCheckIn(Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = await getPendingCheckIns();
+      pending.add({
+        ...data,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      await prefs.setString(_pendingCheckInKey, jsonEncode(pending));
+      debugPrint('[OfflineStorage] Pending check-in saved');
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error saving pending check-in: $e');
+    }
+  }
+
+  /// Ambil semua pending check-ins
+  Future<List<Map<String, dynamic>>> getPendingCheckIns() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = prefs.getString(_pendingCheckInKey);
+      if (data != null) {
+        final list = jsonDecode(data) as List;
+        return list.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error getting pending check-ins: $e');
+      return [];
+    }
+  }
+
+  /// Hapus pending check-in setelah berhasil sync
+  Future<void> removePendingCheckIn(int index) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = await getPendingCheckIns();
+      if (index >= 0 && index < pending.length) {
+        pending.removeAt(index);
+        await prefs.setString(_pendingCheckInKey, jsonEncode(pending));
+        debugPrint('[OfflineStorage] Pending check-in removed');
+      }
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error removing pending check-in: $e');
+    }
+  }
+
+  /// Simpan pending check-out
+  Future<void> savePendingCheckOut(Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = await getPendingCheckOuts();
+      pending.add({
+        ...data,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      await prefs.setString(_pendingCheckOutKey, jsonEncode(pending));
+      debugPrint('[OfflineStorage] Pending check-out saved');
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error saving pending check-out: $e');
+    }
+  }
+
+  /// Ambil semua pending check-outs
+  Future<List<Map<String, dynamic>>> getPendingCheckOuts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = prefs.getString(_pendingCheckOutKey);
+      if (data != null) {
+        final list = jsonDecode(data) as List;
+        return list.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error getting pending check-outs: $e');
+      return [];
+    }
+  }
+
+  /// Hapus pending check-out setelah berhasil sync
+  Future<void> removePendingCheckOut(int index) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = await getPendingCheckOuts();
+      if (index >= 0 && index < pending.length) {
+        pending.removeAt(index);
+        await prefs.setString(_pendingCheckOutKey, jsonEncode(pending));
+        debugPrint('[OfflineStorage] Pending check-out removed');
+      }
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error removing pending check-out: $e');
+    }
+  }
+
+  /// Simpan pending activity
+  Future<void> savePendingActivity(Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = await getPendingActivities();
+      pending.add({
+        ...data,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      await prefs.setString(_pendingActivitiesKey, jsonEncode(pending));
+      debugPrint('[OfflineStorage] Pending activity saved');
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error saving pending activity: $e');
+    }
+  }
+
+  /// Ambil semua pending activities
+  Future<List<Map<String, dynamic>>> getPendingActivities() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = prefs.getString(_pendingActivitiesKey);
+      if (data != null) {
+        final list = jsonDecode(data) as List;
+        return list.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error getting pending activities: $e');
+      return [];
+    }
+  }
+
+  /// Hapus pending activity setelah berhasil sync
+  Future<void> removePendingActivity(int index) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = await getPendingActivities();
+      if (index >= 0 && index < pending.length) {
+        pending.removeAt(index);
+        await prefs.setString(_pendingActivitiesKey, jsonEncode(pending));
+        debugPrint('[OfflineStorage] Pending activity removed');
+      }
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error removing pending activity: $e');
+    }
+  }
+
+  /// Clear semua data offline
+  Future<void> clearAll() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_attendanceKey);
+      await prefs.remove(_shiftsKey);
+      await prefs.remove(_activitiesKey);
+      await prefs.remove(_requestsKey);
+      await prefs.remove(_pendingCheckInKey);
+      await prefs.remove(_pendingCheckOutKey);
+      await prefs.remove(_pendingActivitiesKey);
+      await prefs.remove(_pendingRequestsKey);
+      debugPrint('[OfflineStorage] All offline data cleared');
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error clearing data: $e');
+    }
+  }
+}
+

@@ -87,24 +87,43 @@ class _LoginScreenState extends State<LoginScreen> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 48),
-                    // Email Field
+                    // Email atau NIK KTP Field
                     TextFormField(
                       controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.email_outlined),
-                        border: OutlineInputBorder(),
+                      keyboardType: TextInputType.text,
+                      decoration: InputDecoration(
+                        labelText: 'Email atau NIK KTP',
+                        hintText: 'contoh: user@email.com atau 3372013009110002',
+                        prefixIcon: const Icon(Icons.person_outlined),
+                        border: const OutlineInputBorder(),
+                        hintStyle: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[500],
+                        ),
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Email wajib diisi';
+                          return 'Email atau NIK KTP wajib diisi';
                         }
-                        if (!value.contains('@')) {
-                          return 'Email tidak valid';
+                        // Validasi: harus email (mengandung @) atau NIK (minimal 10 digit angka)
+                        final trimmedValue = value.trim();
+                        final isEmail = trimmedValue.contains('@');
+                        final isNIK = RegExp(r'^\d{10,}$').hasMatch(trimmedValue.replaceAll(RegExp(r'\D'), ''));
+                        
+                        if (!isEmail && !isNIK) {
+                          return 'Masukkan email yang valid atau NIK KTP (minimal 10 digit)';
                         }
                         return null;
                       },
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Anda bisa login menggunakan email atau NIK KTP',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                      textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
                     // Password Field

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -7,9 +8,11 @@ import 'providers/attendance_provider.dart';
 import 'providers/shift_provider.dart';
 import 'providers/activity_provider.dart';
 import 'providers/request_provider.dart';
+import 'providers/connectivity_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/splash/splash_screen.dart';
+import 'screens/attendance/attendance_screen.dart';
 import 'services/api_service.dart';
 
 // Global navigator key untuk akses navigator dari mana saja
@@ -51,6 +54,7 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => ConnectivityProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => AttendanceProvider()),
         ChangeNotifierProvider(create: (_) => ShiftProvider()),
@@ -61,6 +65,16 @@ class _MyAppState extends State<MyApp> {
         title: 'Atenim Mobile',
         debugShowCheckedModeBanner: false,
         navigatorKey: navigatorKey, // Global navigator key untuk auto logout
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [
+          Locale('id', 'ID'),
+          Locale('en', 'US'),
+        ],
+        locale: const Locale('id', 'ID'),
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
           useMaterial3: true,
@@ -69,6 +83,7 @@ class _MyAppState extends State<MyApp> {
         routes: {
           '/login': (context) => const LoginScreen(),
           '/home': (context) => const HomeScreen(),
+          '/attendance': (context) => const AttendanceScreen(),
         },
       ),
     );

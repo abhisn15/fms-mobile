@@ -22,10 +22,17 @@ class User {
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
+    // Ensure name is never null - use email prefix as fallback
+    final name = json['name'] as String?;
+    final email = json['email'] as String? ?? '';
+    final displayName = (name != null && name.trim().isNotEmpty) 
+        ? name 
+        : (email.isNotEmpty ? email.split('@')[0] : 'User');
+    
     return User(
       id: json['id'] as String,
-      name: json['name'] as String,
-      email: json['email'] as String,
+      name: displayName,
+      email: email,
       role: json['role'] as String,
       team: json['team'] as String?,
       title: json['title'] as String?,

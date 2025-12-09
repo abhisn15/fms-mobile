@@ -89,6 +89,17 @@ class _ProfileScreenState extends State<ProfileScreen>
       _isEditing = true;
     }
 
+    // Initialize form immediately if user data is available
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final user = authProvider.user;
+        if (user != null) {
+          _initializeForm(user);
+        }
+      }
+    });
+
     // Start animations
     _fadeController.forward();
     _slideController.forward();
@@ -106,8 +117,9 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   void _initializeForm(User user) {
+    // Always set name, even if empty (will show '-' in display)
     _nameController.text = user.name;
-    _emailController.text = user.email;
+    _emailController.text = user.email.isNotEmpty ? user.email : '';
     _titleController.text = user.title ?? '';
     _teamController.text = user.team ?? '';
     _selectedAvatarColor = user.avatarColor ?? '#1d4ed8';
@@ -323,13 +335,15 @@ class _ProfileScreenState extends State<ProfileScreen>
             return const Center(child: CircularProgressIndicator());
           }
 
-          // Initialize form if needed
-          if (_nameController.text.isEmpty) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                _initializeForm(user);
-              }
-            });
+          // Initialize form immediately when user data is available
+          // Always initialize to ensure form is synced with user data
+          if (_nameController.text.isEmpty || _nameController.text != user.name) {
+            _initializeForm(user);
+          }
+          
+          // Also ensure form is initialized if in edit mode
+          if (_isEditing && (_nameController.text.isEmpty || _nameController.text != user.name)) {
+            _initializeForm(user);
           }
 
           return FadeTransition(
@@ -542,7 +556,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               const SizedBox(height: 4),
               Text(
-                value,
+                value.isNotEmpty ? value : '-',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,

@@ -78,43 +78,10 @@ class ActivityProvider with ChangeNotifier {
     }
   }
 
-  Future<Map<String, dynamic>> uploadCheckpointPhoto({
-    required File photo,
-    required String checkpointId,
-  }) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
-    try {
-      final result = await _activityService.uploadCheckpointPhoto(
-        photo: photo,
-        checkpointId: checkpointId,
-      );
-
-      if (result['success'] == true) {
-        _error = null;
-        return result;
-      } else {
-        _error = result['message'] as String;
-        return result;
-      }
-    } catch (e) {
-      _error = ErrorHandler.getErrorMessage(e);
-      return {
-        'success': false,
-        'message': ErrorHandler.getErrorMessage(e),
-      };
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
   Future<bool> submitPatroli({
     required String summary,
-    required List<SecurityCheckpoint> checkpoints,
     String? notes,
+    List<File>? photos,
   }) async {
     _isLoading = true;
     _error = null;
@@ -123,8 +90,8 @@ class ActivityProvider with ChangeNotifier {
     try {
       final result = await _activityService.submitPatroli(
         summary: summary,
-        checkpoints: checkpoints,
         notes: notes,
+        photos: photos ?? [],
       );
 
       if (result['success'] == true) {

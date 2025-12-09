@@ -11,10 +11,18 @@ import 'api_service.dart';
 class AttendanceService {
   final ApiService _apiService = ApiService();
 
-  Future<AttendancePayload> getAttendance() async {
+  Future<AttendancePayload> getAttendance({DateTime? startDate, DateTime? endDate}) async {
     debugPrint('[AttendanceService] Loading attendance data...');
     try {
-      final response = await _apiService.get(ApiConfig.attendance);
+      String url = ApiConfig.attendance;
+      if (startDate != null && endDate != null) {
+        final startDateStr = startDate.toIso8601String().split('T')[0];
+        final endDateStr = endDate.toIso8601String().split('T')[0];
+        url = '${ApiConfig.attendance}?startDate=$startDateStr&endDate=$endDateStr';
+        debugPrint('[AttendanceService] Using date range: $startDateStr to $endDateStr');
+      }
+      
+      final response = await _apiService.get(url);
       if (response.statusCode == 200) {
         debugPrint('[AttendanceService] ✓ Attendance data loaded successfully');
         final payload = AttendancePayload.fromJson(response.data['data']);

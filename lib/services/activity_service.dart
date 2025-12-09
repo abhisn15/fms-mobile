@@ -104,8 +104,8 @@ class ActivityService {
 
   Future<Map<String, dynamic>> submitPatroli({
     required String summary,
-    required List<SecurityCheckpoint> checkpoints,
     String? notes,
+    List<File> photos = const [],
   }) async {
     try {
       Position? position;
@@ -117,49 +117,38 @@ class ActivityService {
         // GPS opsional
       }
 
-      // Format checkpoints sesuai dengan backend (JSON string)
-      // Backend mengharapkan format: { id, name, completed, timestamp?, coordinates?: {lat, lng}, photoUrl?, photoReason? }
-      final checkpointsJson = checkpoints.map((cp) {
-        final checkpointData = <String, dynamic>{
-          'id': cp.id,
-          'name': cp.name,
-          'completed': cp.completed,
-        };
-        
-        if (cp.completed) {
-          checkpointData['timestamp'] = DateTime.now().toIso8601String();
-        }
-        
-        if (cp.latitude != null && cp.longitude != null) {
-          checkpointData['coordinates'] = {
-            'lat': cp.latitude,
-            'lng': cp.longitude,
-          };
-        }
-        
-        if (cp.photoUrl != null) {
-          checkpointData['photoUrl'] = cp.photoUrl;
-        }
-        
-        if (cp.reason != null && cp.reason!.isNotEmpty) {
-          checkpointData['photoReason'] = cp.reason;
-        }
-        
-        return checkpointData;
-      }).toList();
+      // Summary = nama tempat (locationName)
+      // Notes = deskripsi (opsional)
+      final locationName = summary; // Summary adalah nama tempat
+      final finalNotes = notes; // Notes adalah deskripsi
 
-      final formData = FormData.fromMap({
-        'summary': summary,
+      // Prepare form data - patroli tanpa checkpoint
+      final Map<String, dynamic> formDataMap = {
+        'summary': summary, // Summary adalah nama tempat
         'sentiment': 'netral',
         'focusHours': '0',
         'blockers': '[]',
         'highlights': '[]',
         'plans': '[]',
-        if (notes != null && notes.isNotEmpty) 'notes': notes,
-        'checkpoints': jsonEncode(checkpointsJson), // Kirim sebagai JSON string
+        if (locationName.isNotEmpty) 'locationName': locationName,
+        if (finalNotes != null && finalNotes.isNotEmpty) 'notes': finalNotes,
+        // Tidak mengirim checkpoints - patroli sederhana tanpa checkpoint
         if (position != null) 'latitude': position.latitude.toString(),
         if (position != null) 'longitude': position.longitude.toString(),
-      });
+      };
+
+      // Add multiple photos
+      final formData = FormData.fromMap(formDataMap);
+      if (photos.isNotEmpty) {
+        for (final photo in photos) {
+          formData.files.add(
+            MapEntry(
+              'photos', // Backend expects "photos" (plural) for multiple files
+              await MultipartFile.fromFile(photo.path),
+            ),
+          );
+        }
+      }
 
       final response = await _apiService.postFormData(
         ApiConfig.activity,
@@ -303,47 +292,5 @@ class ActivityService {
     }
   }
 
-  Future<Map<String, dynamic>> uploadCheckpointPhoto({
-    required File photo,
-    required String checkpointId,
-  }) async {
-    try {
-      Position? position;
-      try {
-        position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-        );
-      } catch (e) {
-        // GPS opsional
-      }
-
-      final formData = FormData.fromMap({
-        'photo': await MultipartFile.fromFile(photo.path),
-        'checkpointId': checkpointId,
-        if (position != null) 'latitude': position.latitude.toString(),
-        if (position != null) 'longitude': position.longitude.toString(),
-      });
-
-      final response = await _apiService.postFormData(
-        ApiConfig.checkpointPhoto,
-        formData,
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return {
-          'success': true,
-          'data': response.data['data'],
-          'message': response.data['message'] ?? 'Foto checkpoint berhasil diunggah',
-        };
-      } else {
-        throw Exception(response.data['message'] ?? 'Gagal mengunggah foto checkpoint');
-      }
-    } catch (e) {
-      return {
-        'success': false,
-        'message': e.toString().replaceAll('Exception: ', ''),
-      };
-    }
-  }
 }
 

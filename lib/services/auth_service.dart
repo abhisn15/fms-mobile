@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 import '../config/api_config.dart';
@@ -9,12 +10,14 @@ class AuthService {
   static const String _userKey = 'user_data';
   static const String _isLoggedInKey = 'is_logged_in';
 
+  /// Login dengan email atau NIK KTP
+  /// [email] bisa berupa email atau NIK KTP
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
       final response = await _apiService.post(
         ApiConfig.login,
         data: {
-          'email': email,
+          'email': email, // Bisa berupa email atau NIK KTP
           'password': password,
         },
       );
@@ -71,7 +74,11 @@ class AuthService {
       // Verifikasi session dengan backend
       final response = await _apiService.get(ApiConfig.session);
       if (response.statusCode == 200 && response.data['data'] != null) {
-        return User.fromJson(response.data['data']);
+        final userData = response.data['data'];
+        debugPrint('[AuthService] User data from session: name="${userData['name']}", email="${userData['email']}"');
+        final user = User.fromJson(userData);
+        debugPrint('[AuthService] Parsed user: name="${user.name}", email="${user.email}"');
+        return user;
       }
       // Session expired atau tidak valid
       if (response.statusCode == 401 || response.statusCode == 403) {

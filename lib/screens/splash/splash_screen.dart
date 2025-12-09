@@ -15,34 +15,20 @@ class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
-  late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
-    
+
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
 
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
         curve: const Interval(0.0, 0.6, curve: Curves.easeIn),
-      ),
-    );
-
-    _scaleAnimation = Tween<double>(
-      begin: 0.5,
-      end: 1.0,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.6, curve: Curves.elasticOut),
       ),
     );
 
@@ -57,7 +43,7 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted) return;
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
+
     // Wait a bit for auth check if still loading
     if (authProvider.isLoading) {
       await Future.delayed(const Duration(milliseconds: 500));
@@ -73,13 +59,10 @@ class _SplashScreenState extends State<SplashScreen>
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) =>
               authProvider.isAuthenticated
-                  ? const HomeScreen()
-                  : const LoginScreen(),
+              ? const HomeScreen()
+              : const LoginScreen(),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(
-              opacity: animation,
-              child: child,
-            );
+            return FadeTransition(opacity: animation, child: child);
           },
           transitionDuration: const Duration(milliseconds: 500),
         ),
@@ -96,118 +79,26 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: ScaleTransition(
-            scale: _scaleAnimation,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // App Logo/Icon
-                Container(
-                  width: 150,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(color: Color.fromRGBO(111, 195, 250, 1)),
+          child: Center(
+            child: Image.asset(
+              'assets/splash_screen.png',
+              fit: BoxFit.contain, // Use contain to maintain aspect ratio
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  width: double.infinity,
+                  height: double.infinity,
+                  color: Colors.blue[50],
+                  child: const Center(
+                    child: Icon(Icons.business, size: 80, color: Colors.blue),
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(30),
-                    child: Image.asset(
-                      'assets/splash_screen.png',
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: Colors.blue[50],
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                          child: const Icon(
-                            Icons.business,
-                            size: 80,
-                            color: Colors.blue,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 32),
-                // App Name
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0.0, end: 1.0),
-                  duration: const Duration(milliseconds: 800),
-                  curve: Curves.easeIn,
-                  builder: (context, value, child) {
-                    return Opacity(
-                      opacity: value,
-                      child: Transform.translate(
-                        offset: Offset(0, 20 * (1 - value)),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: const Text(
-                    'Atenim Mobile',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0.0, end: 1.0),
-                  duration: const Duration(milliseconds: 1000),
-                  curve: Curves.easeIn,
-                  builder: (context, value, child) {
-                    return Opacity(
-                      opacity: value,
-                      child: child,
-                    );
-                  },
-                  child: Text(
-                    'Employee Management System',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 48),
-                // Loading Indicator
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0.0, end: 1.0),
-                  duration: const Duration(milliseconds: 1200),
-                  builder: (context, value, child) {
-                    return Opacity(
-                      opacity: value,
-                      child: child,
-                    );
-                  },
-                  child: SizedBox(
-                    width: 40,
-                    height: 40,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Theme.of(context).primaryColor,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+                );
+              },
             ),
           ),
         ),
@@ -215,4 +106,3 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 }
-

@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   # UI & Icons
   cupertino_icons: ^1.0.8
@@ -24,6 +26,9 @@ dependencies:
   # Local Storage
   shared_preferences: ^2.2.2
   
+  # Connectivity
+  connectivity_plus: ^6.0.5
+  
   # Image Picker & Camera
   image_picker: ^1.0.7
   camera: ^0.10.5+9
@@ -33,7 +38,7 @@ dependencies:
   permission_handler: ^11.1.0
   
   # Date & Time
-  intl: ^0.19.0
+  intl: ^0.20.2
   
   # Image Display
   cached_network_image: ^3.3.1
@@ -58,7 +63,12 @@ flutter:
     - .env
     - assets/splash_screen.png
     - assets/icon.png
-  
-  # App Icon
-  # Run: flutter pub get
-  # Then: flutter pub run flutter_launcher_icons
+
+# App Icon Configuration
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/icon.png"
+  remove_alpha_ios: true

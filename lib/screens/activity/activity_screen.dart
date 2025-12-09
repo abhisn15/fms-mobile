@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/activity_provider.dart';
+import '../../widgets/adaptive_image.dart';
 import 'activity_form_screen.dart';
 import '../../models/activity_model.dart';
 import '../../config/api_config.dart';
@@ -14,9 +15,30 @@ class ActivityScreen extends StatefulWidget {
 }
 
 class _ActivityScreenState extends State<ActivityScreen> {
+  // Default: bulan ini (tanggal 1 sampai hari ini)
+  late DateTime _startDate = _getDefaultStartDate();
+  late DateTime _endDate = _getDefaultEndDate();
+  String? _selectedSentiment;
+  int _currentPage = 1;
+  final int _itemsPerPage = 10;
+
+  static DateTime _getDefaultStartDate() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, 1);
+  }
+
+  static DateTime _getDefaultEndDate() {
+    return DateTime.now();
+  }
+
   @override
   void initState() {
     super.initState();
+    // Set default ke bulan ini
+    final now = DateTime.now();
+    _startDate = DateTime(now.year, now.month, 1);
+    _endDate = now;
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<ActivityProvider>(context, listen: false).loadActivities();
     });
@@ -28,6 +50,17 @@ class _ActivityScreenState extends State<ActivityScreen> {
       appBar: AppBar(
         title: const Text('Aktivitas Harian'),
         actions: [
+          if (_selectedSentiment != null)
+            IconButton(
+              icon: const Icon(Icons.filter_alt),
+              onPressed: () => _showSentimentFilterDialog(context),
+              tooltip: 'Filter Sentiment',
+            ),
+          IconButton(
+            icon: const Icon(Icons.date_range),
+            onPressed: () => _selectDateRange(context),
+            tooltip: 'Pilih Rentang Tanggal',
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () async {
@@ -45,40 +78,166 @@ class _ActivityScreenState extends State<ActivityScreen> {
           ),
         ],
       ),
-      body: Consumer<ActivityProvider>(
-        builder: (context, activityProvider, _) {
-          if (activityProvider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (activityProvider.error != null) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
-                  const SizedBox(height: 16),
-                  Text(
-                    activityProvider.error!,
-                    style: TextStyle(color: Colors.red[700]),
-                    textAlign: TextAlign.center,
+      body: Column(
+        children: [
+          // Date Range Filter Card
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue[200]!),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.calendar_today, color: Colors.blue[700], size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Rentang Tanggal',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${DateFormat('dd MMM yyyy', 'id_ID').format(_startDate)} - ${DateFormat('dd MMM yyyy', 'id_ID').format(_endDate)}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue[900],
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      activityProvider.loadActivities();
+                ),
+                IconButton(
+                  icon: Icon(Icons.edit, color: Colors.blue[700], size: 20),
+                  onPressed: () => _selectDateRange(context),
+                  tooltip: 'Ubah Rentang Tanggal',
+                ),
+              ],
+            ),
+          ),
+          // Sentiment Filter Chip (if selected)
+          if (_selectedSentiment != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Chip(
+                    label: Text('Sentiment: ${_selectedSentiment!.toUpperCase()}'),
+                    onDeleted: () {
+                      setState(() {
+                        _selectedSentiment = null;
+                        _currentPage = 1;
+                      });
                     },
-                    child: const Text('Coba Lagi'),
+                    deleteIcon: const Icon(Icons.close, size: 18),
                   ),
                 ],
               ),
-            );
-          }
+            ),
+          // Activity List
+          Expanded(
+            child: Consumer<ActivityProvider>(
+              builder: (context, activityProvider, _) {
+                if (activityProvider.isLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          final recent = activityProvider.recentActivities;
-          final today = activityProvider.todayActivity;
+                if (activityProvider.error != null) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+                        const SizedBox(height: 16),
+                        Text(
+                          activityProvider.error!,
+                          style: TextStyle(color: Colors.red[700]),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () {
+                            activityProvider.loadActivities();
+                          },
+                          child: const Text('Coba Lagi'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
 
-          if (recent.isEmpty && today == null) {
+                final recent = activityProvider.recentActivities;
+                final today = activityProvider.todayActivity;
+
+                // Apply filters
+                List<DailyActivity> filteredRecent = recent.where((activity) {
+                  // Filter by date range
+                  final activityDate = DateTime.parse(activity.date);
+                  if (activityDate.isBefore(_startDate)) return false;
+                  if (activityDate.isAfter(_endDate.add(const Duration(days: 1)))) return false;
+                  
+                  // Filter by sentiment
+                  if (_selectedSentiment != null && activity.sentiment.toLowerCase() != _selectedSentiment!.toLowerCase()) {
+                    return false;
+                  }
+                  
+                  return true;
+                }).toList();
+                
+                // Filter today activity
+                DailyActivity? filteredToday;
+                if (today != null) {
+                  final todayDate = DateTime.parse(today.date);
+                  bool includeToday = true;
+                  if (todayDate.isBefore(_startDate)) includeToday = false;
+                  if (todayDate.isAfter(_endDate.add(const Duration(days: 1)))) includeToday = false;
+                  if (_selectedSentiment != null && today.sentiment.toLowerCase() != _selectedSentiment!.toLowerCase()) {
+                    includeToday = false;
+                  }
+                  if (includeToday) filteredToday = today;
+                }
+
+                // Combine all activities for pagination
+                final allFilteredActivities = <DailyActivity>[];
+                if (filteredToday != null) {
+                  allFilteredActivities.add(filteredToday);
+                }
+                allFilteredActivities.addAll(filteredRecent);
+
+                // Calculate pagination
+                final totalItems = allFilteredActivities.length;
+                final totalPages = (totalItems / _itemsPerPage).ceil();
+                final startIndex = (_currentPage - 1) * _itemsPerPage;
+                final endIndex = startIndex + _itemsPerPage;
+                final paginatedActivities = allFilteredActivities.sublist(
+                  startIndex.clamp(0, totalItems),
+                  endIndex.clamp(0, totalItems),
+                );
+
+                // Separate today and recent for display
+                DailyActivity? paginatedToday;
+                List<DailyActivity> paginatedRecent = [];
+                
+                if (paginatedActivities.isNotEmpty) {
+                  // Check if first item is today
+                  if (filteredToday != null && paginatedActivities.first.id == filteredToday.id) {
+                    paginatedToday = paginatedActivities.first;
+                    paginatedRecent = paginatedActivities.skip(1).toList();
+                  } else {
+                    paginatedRecent = paginatedActivities;
+                  }
+                }
+
+                if (allFilteredActivities.isEmpty) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -110,32 +269,179 @@ class _ActivityScreenState extends State<ActivityScreen> {
             );
           }
 
-          return RefreshIndicator(
-            onRefresh: () => activityProvider.loadActivities(),
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                if (today != null) ...[
-                  _buildActivityCard(context, today, isToday: true),
-                  const SizedBox(height: 16),
-                ],
-                if (recent.isNotEmpty) ...[
-                  Text(
-                    'Riwayat',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
+                return RefreshIndicator(
+                  onRefresh: () => activityProvider.loadActivities(),
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            if (paginatedToday != null) ...[
+                              _buildActivityCard(context, paginatedToday, isToday: true),
+                              const SizedBox(height: 16),
+                            ],
+                            if (paginatedRecent.isNotEmpty) ...[
+                              Text(
+                                'Riwayat',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                              ),
+                              const SizedBox(height: 8),
+                              ...paginatedRecent.map((activity) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: _buildActivityCard(context, activity),
+                                  )),
+                            ],
+                          ],
                         ),
+                      ),
+                      // Pagination
+                      if (totalPages > 1)
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            border: Border(top: BorderSide(color: Colors.grey[200]!)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Halaman $_currentPage dari $totalPages',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_left),
+                                    onPressed: _currentPage > 1
+                                        ? () {
+                                            setState(() {
+                                              _currentPage--;
+                                            });
+                                          }
+                                        : null,
+                                  ),
+                                  Text(
+                                    '$_currentPage / $totalPages',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.chevron_right),
+                                    onPressed: _currentPage < totalPages
+                                        ? () {
+                                            setState(() {
+                                              _currentPage++;
+                                            });
+                                          }
+                                        : null,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  ...recent.map((activity) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _buildActivityCard(context, activity),
-                      )),
-                ],
-              ],
+                );
+              },
             ),
-          );
-        },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _selectDateRange(BuildContext context) async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
+      locale: const Locale('id', 'ID'),
+      helpText: 'Pilih Rentang Tanggal',
+      cancelText: 'Batal',
+      confirmText: 'Pilih',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Theme.of(context).primaryColor,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black87,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && picked != DateTimeRange(start: _startDate, end: _endDate)) {
+      setState(() {
+        _startDate = picked.start;
+        _endDate = picked.end;
+        _currentPage = 1; // Reset to first page
+      });
+    }
+  }
+
+  Future<void> _showSentimentFilterDialog(BuildContext context) async {
+    String? tempSentiment = _selectedSentiment;
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Filter Sentiment'),
+          content: DropdownButtonFormField<String>(
+            value: tempSentiment,
+            decoration: const InputDecoration(
+              labelText: 'Pilih Sentiment',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('Semua')),
+              const DropdownMenuItem(value: 'positif', child: Text('Positif')),
+              const DropdownMenuItem(value: 'netral', child: Text('Netral')),
+              const DropdownMenuItem(value: 'negatif', child: Text('Negatif')),
+            ],
+            onChanged: (value) {
+              setDialogState(() {
+                tempSentiment = value;
+              });
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                setDialogState(() {
+                  tempSentiment = null;
+                });
+              },
+              child: const Text('Reset'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _selectedSentiment = tempSentiment;
+                  _currentPage = 1; // Reset to first page
+                });
+                Navigator.pop(context);
+              },
+              child: const Text('Terapkan'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -308,40 +614,52 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     runSpacing: 8,
                     children: activity.photoUrls!.map((url) {
                       final fullUrl = ApiConfig.getImageUrl(url);
-                      return ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          fullUrl,
-                          width: 100,
-                          height: 100,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              width: 100,
-                              height: 100,
-                              color: Colors.grey[200],
-                              child: Icon(
-                                Icons.broken_image,
-                                color: Colors.grey[400],
-                              ),
-                            );
-                          },
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return Container(
-                              width: 100,
-                              height: 100,
-                              color: Colors.grey[200],
-                              child: Center(
-                                child: CircularProgressIndicator(
-                                  value: loadingProgress.expectedTotalBytes != null
-                                      ? loadingProgress.cumulativeBytesLoaded /
-                                          loadingProgress.expectedTotalBytes!
-                                      : null,
-                                ),
-                              ),
-                            );
-                          },
+                      return GestureDetector(
+                        onTap: () {
+                          // Show full screen image dengan aspect ratio yang benar
+                          showDialog(
+                            context: context,
+                            builder: (context) => FullScreenImageDialog.network(
+                              imageUrl: fullUrl,
+                            ),
+                          );
+                        },
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            width: 120,
+                            height: 160, // 120 * 4/3 untuk portrait (lebih tinggi)
+                            child: Image.network(
+                              fullUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Colors.grey[200],
+                                  child: Icon(
+                                    Icons.broken_image,
+                                    color: Colors.grey[400],
+                                  ),
+                                );
+                              },
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Container(
+                                  color: Colors.grey[200],
+                                  child: const Center(
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                );
+                              },
+                              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                                if (wasSynchronouslyLoaded) return child;
+                                return AnimatedOpacity(
+                                  opacity: frame == null ? 0 : 1,
+                                  duration: const Duration(milliseconds: 200),
+                                  child: child,
+                                );
+                              },
+                            ),
+                          ),
                         ),
                       );
                     }).toList(),
@@ -423,5 +741,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
         return Icons.sentiment_neutral;
     }
   }
+
 }
 

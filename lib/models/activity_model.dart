@@ -9,6 +9,7 @@ class DailyActivity {
   final List<String> highlights;
   final List<String> plans;
   final String? notes;
+  final String? locationName; // Nama tempat untuk patroli
   final List<SecurityCheckpoint>? checkpoints;
   final List<String>? photoUrls;
   final double? latitude;
@@ -28,6 +29,7 @@ class DailyActivity {
     required this.highlights,
     required this.plans,
     this.notes,
+    this.locationName,
     this.checkpoints,
     this.photoUrls,
     this.latitude,
@@ -58,6 +60,7 @@ class DailyActivity {
               .toList() ??
           [],
       notes: json['notes'] as String?,
+      locationName: json['locationName'] as String?,
       checkpoints: json['checkpoints'] != null
           ? (json['checkpoints'] as List<dynamic>)
               .map((e) => SecurityCheckpoint.fromJson(e as Map<String, dynamic>))
@@ -79,44 +82,94 @@ class SecurityCheckpoint {
   final String id;
   final String name;
   final bool completed;
+  final String? timestamp; // ISO 8601 timestamp
   final String? photoUrl;
-  final String? reason;
-  final double? latitude;
-  final double? longitude;
+  final String? photoReason; // Alasan/findings (sesuai backend)
+  final double? latitude; // Untuk backward compatibility
+  final double? longitude; // Untuk backward compatibility
+  final Map<String, double>? coordinates; // Format backend: {lat, lng}
 
   SecurityCheckpoint({
     required this.id,
     required this.name,
     required this.completed,
+    this.timestamp,
     this.photoUrl,
-    this.reason,
+    this.photoReason,
     this.latitude,
     this.longitude,
+    this.coordinates,
   });
 
   factory SecurityCheckpoint.fromJson(Map<String, dynamic> json) {
+    // Handle coordinates dari backend (bisa {lat, lng} atau langsung latitude/longitude)
+    Map<String, double>? coordinates;
+    double? lat;
+    double? lng;
+    
+    if (json['coordinates'] != null && json['coordinates'] is Map) {
+      final coords = json['coordinates'] as Map<String, dynamic>;
+      lat = coords['lat'] != null ? (coords['lat'] as num).toDouble() : null;
+      lng = coords['lng'] != null ? (coords['lng'] as num).toDouble() : null;
+      if (lat != null && lng != null) {
+        coordinates = {'lat': lat, 'lng': lng};
+      }
+    } else {
+      // Backward compatibility: langsung dari latitude/longitude
+      lat = json['latitude'] != null ? (json['latitude'] as num).toDouble() : null;
+      lng = json['longitude'] != null ? (json['longitude'] as num).toDouble() : null;
+      if (lat != null && lng != null) {
+        coordinates = {'lat': lat, 'lng': lng};
+      }
+    }
+    
     return SecurityCheckpoint(
       id: json['id'] as String,
       name: json['name'] as String,
       completed: json['completed'] as bool? ?? false,
+      timestamp: json['timestamp'] as String?,
       photoUrl: json['photoUrl'] as String?,
-      reason: json['reason'] as String?,
-      latitude: json['latitude'] != null ? (json['latitude'] as num).toDouble() : null,
-      longitude: json['longitude'] != null ? (json['longitude'] as num).toDouble() : null,
+      photoReason: json['photoReason'] as String? ?? json['reason'] as String?, // Backward compatibility
+      latitude: lat,
+      longitude: lng,
+      coordinates: coordinates,
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {
+    final json = <String, dynamic>{
       'id': id,
       'name': name,
       'completed': completed,
-      'photoUrl': photoUrl,
-      'reason': reason,
-      'latitude': latitude,
-      'longitude': longitude,
     };
+    
+    if (timestamp != null) {
+      json['timestamp'] = timestamp;
+    }
+    
+    if (photoUrl != null) {
+      json['photoUrl'] = photoUrl;
+    }
+    
+    if (photoReason != null) {
+      json['photoReason'] = photoReason; // Backend menggunakan photoReason
+    }
+    
+    // Format coordinates sesuai backend: {lat, lng}
+    if (coordinates != null) {
+      json['coordinates'] = coordinates;
+    } else if (latitude != null && longitude != null) {
+      json['coordinates'] = {
+        'lat': latitude!,
+        'lng': longitude!,
+      };
+    }
+    
+    return json;
   }
+  
+  // Getter untuk backward compatibility
+  String? get reason => photoReason;
 }
 
 class ActivityPayload {

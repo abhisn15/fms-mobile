@@ -7,6 +7,7 @@ import 'dart:io';
 import '../../providers/activity_provider.dart';
 import '../../screens/camera/camera_screen.dart';
 import '../../config/api_config.dart';
+import '../../utils/toast_helper.dart';
 
 class ActivityFormScreen extends StatefulWidget {
   final String? activityId; // If provided, edit mode; otherwise, create mode
@@ -208,21 +209,17 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
 
     if (mounted) {
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(widget.activityId != null 
-                ? 'Aktivitas berhasil diperbarui' 
-                : 'Aktivitas berhasil disimpan'),
-            backgroundColor: Colors.green,
-          ),
+        ToastHelper.showSuccess(
+          context,
+          widget.activityId != null 
+              ? 'Aktivitas berhasil diperbarui' 
+              : 'Aktivitas berhasil disimpan',
         );
         Navigator.of(context).pop(true);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(activityProvider.error ?? 'Gagal menyimpan aktivitas'),
-            backgroundColor: Colors.red,
-          ),
+        ToastHelper.showError(
+          context,
+          activityProvider.error ?? 'Gagal menyimpan aktivitas',
         );
       }
     }
@@ -279,19 +276,6 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
                   initialDate: _selectedDate,
                   firstDate: DateTime(2020),
                   lastDate: DateTime.now(),
-                  locale: const Locale('id', 'ID'),
-                  builder: (context, child) {
-                    return Theme(
-                      data: Theme.of(context).copyWith(
-                        colorScheme: ColorScheme.light(
-                          primary: Theme.of(context).primaryColor,
-                          onPrimary: Colors.white,
-                          onSurface: Colors.black,
-                        ),
-                      ),
-                      child: child!,
-                    );
-                  },
                 );
                 if (picked != null && picked != _selectedDate) {
                   setState(() {
@@ -456,7 +440,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
                         crossAxisCount: 3,
                         crossAxisSpacing: 8,
                         mainAxisSpacing: 8,
-                        childAspectRatio: 1,
+                        childAspectRatio: 0.75, // 3/4 ratio for portrait photos
                       ),
                       itemCount: _existingPhotoUrls.length + _selectedPhotos.length,
                       itemBuilder: (context, index) {

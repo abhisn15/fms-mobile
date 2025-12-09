@@ -3,6 +3,7 @@ import '../attendance/attendance_screen.dart';
 import '../activity/activity_screen.dart';
 import '../requests/requests_screen.dart';
 import '../patroli/patroli_screen.dart';
+import '../../widgets/offline_indicator.dart';
 import 'home_tab.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -87,7 +88,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
     
     return Scaffold(
-      body: PageView.builder(
+      body: Column(
+        children: [
+          const OfflineIndicator(),
+          Expanded(
+            child: PageView.builder(
         controller: _pageController!,
         onPageChanged: _onPageChanged,
         itemCount: _screens.length,
@@ -104,54 +109,117 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               )),
               child: _screens[index],
             ),
-          );
-        },
+            );
+          },
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: Container(
-        height: 70, // Make bottom bar taller
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
+          color: Colors.white,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: Colors.black.withOpacity(0.05),
               blurRadius: 10,
               offset: const Offset(0, -2),
             ),
           ],
         ),
-        child: NavigationBar(
-          selectedIndex: _currentIndex,
-          onDestinationSelected: _onDestinationSelected,
-          height: 56,
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home),
-              label: 'Home',
+        child: SafeArea(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildNavItem(
+                  context,
+                  index: 0,
+                  icon: Icons.home_outlined,
+                  selectedIcon: Icons.home,
+                  label: 'Home',
+                ),
+                _buildNavItem(
+                  context,
+                  index: 1,
+                  icon: Icons.calendar_today_outlined,
+                  selectedIcon: Icons.calendar_today,
+                  label: 'Absensi',
+                ),
+                _buildNavItem(
+                  context,
+                  index: 2,
+                  icon: Icons.assignment_outlined,
+                  selectedIcon: Icons.assignment,
+                  label: 'Aktivitas',
+                ),
+                _buildNavItem(
+                  context,
+                  index: 3,
+                  icon: Icons.request_quote_outlined,
+                  selectedIcon: Icons.request_quote,
+                  label: 'Request',
+                ),
+                _buildNavItem(
+                  context,
+                  index: 4,
+                  icon: Icons.security_outlined,
+                  selectedIcon: Icons.security,
+                  label: 'Patroli',
+                ),
+              ],
             ),
-            NavigationDestination(
-              icon: Icon(Icons.calendar_today_outlined),
-              selectedIcon: Icon(Icons.calendar_today),
-              label: 'Absensi',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.assignment_outlined),
-              selectedIcon: Icon(Icons.assignment),
-              label: 'Aktivitas',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.request_quote_outlined),
-              selectedIcon: Icon(Icons.request_quote),
-              label: 'Request',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.security_outlined),
-              selectedIcon: Icon(Icons.security),
-              label: 'Patroli',
-            ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem(
+    BuildContext context, {
+    required int index,
+    required IconData icon,
+    required IconData selectedIcon,
+    required String label,
+  }) {
+    final isSelected = _currentIndex == index;
+    final primaryColor = Theme.of(context).primaryColor;
+    
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _onDestinationSelected(index),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.grey[200] : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  isSelected ? selectedIcon : icon,
+                  color: isSelected ? primaryColor : Colors.grey[600],
+                  size: 22,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? primaryColor : Colors.grey[600],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ),
     );
