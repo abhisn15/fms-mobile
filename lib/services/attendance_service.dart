@@ -164,16 +164,26 @@ class AttendanceService {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         debugPrint('[AttendanceService] ✓ Check-in successful');
+        // Safely parse response data
+        final responseData = response.data;
+        final data = (responseData is Map && responseData.containsKey('data')) 
+            ? responseData['data'] 
+            : responseData;
+        final message = (responseData is Map && responseData.containsKey('message'))
+            ? (responseData['message'] as String?)
+            : 'Check-in berhasil';
+        
         return {
           'success': true,
-          'data': response.data['data'],
-          'message': response.data['message'] ?? 'Check-in berhasil',
+          'data': data,
+          'message': message ?? 'Check-in berhasil',
         };
       } else {
         // Handle error response
-        final errorMessage = response.data?['message'] ?? 
-                           response.data?['error'] ?? 
-                           'Check-in gagal';
+        final responseData = response.data;
+        final errorMessage = (responseData is Map)
+            ? (responseData['message'] ?? responseData['error'] ?? 'Check-in gagal')
+            : 'Check-in gagal';
         debugPrint('[AttendanceService] ✗ Check-in failed: $errorMessage (Status: ${response.statusCode})');
         throw DioException(
           requestOptions: RequestOptions(path: ApiConfig.checkIn),
@@ -273,16 +283,26 @@ class AttendanceService {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         debugPrint('[AttendanceService] ✓ Check-out successful');
+        // Safely parse response data
+        final responseData = response.data;
+        final data = (responseData is Map && responseData.containsKey('data')) 
+            ? responseData['data'] 
+            : responseData;
+        final message = (responseData is Map && responseData.containsKey('message'))
+            ? (responseData['message'] as String?)
+            : 'Check-out berhasil';
+        
         return {
           'success': true,
-          'data': response.data['data'],
-          'message': response.data['message'] ?? 'Check-out berhasil',
+          'data': data,
+          'message': message ?? 'Check-out berhasil',
         };
       } else {
         // Handle error response
-        final errorMessage = response.data?['message'] ?? 
-                           response.data?['error'] ?? 
-                           'Check-out gagal';
+        final responseData = response.data;
+        final errorMessage = (responseData is Map)
+            ? (responseData['message'] ?? responseData['error'] ?? 'Check-out gagal')
+            : 'Check-out gagal';
         debugPrint('[AttendanceService] ✗ Check-out failed: $errorMessage (Status: ${response.statusCode})');
         throw DioException(
           requestOptions: RequestOptions(path: ApiConfig.checkOut),

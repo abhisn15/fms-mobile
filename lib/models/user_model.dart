@@ -8,6 +8,10 @@ class User {
   final String? avatarColor;
   final String? photoUrl;
   final String externalId;
+  final String? positionId;
+  final String? siteId;
+  final Position? position;
+  final Site? site;
 
   User({
     required this.id,
@@ -19,6 +23,10 @@ class User {
     this.avatarColor,
     this.photoUrl,
     required this.externalId,
+    this.positionId,
+    this.siteId,
+    this.position,
+    this.site,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -30,15 +38,19 @@ class User {
         : (email.isNotEmpty ? email.split('@')[0] : 'User');
     
     return User(
-      id: json['id'] as String,
+      id: json['id'] as String? ?? '',
       name: displayName,
       email: email,
-      role: json['role'] as String,
+      role: json['role'] as String? ?? 'karyawan',
       team: json['team'] as String?,
       title: json['title'] as String?,
       avatarColor: json['avatarColor'] as String?,
       photoUrl: json['photoUrl'] as String?,
-      externalId: json['externalId'] as String,
+      externalId: json['externalId'] as String? ?? '',
+      positionId: json['positionId'] as String?,
+      siteId: json['siteId'] as String?,
+      position: json['position'] != null ? Position.fromJson(json['position']) : null,
+      site: json['site'] != null ? Site.fromJson(json['site']) : null,
     );
   }
 
@@ -53,6 +65,66 @@ class User {
       'avatarColor': avatarColor,
       'photoUrl': photoUrl,
       'externalId': externalId,
+      'positionId': positionId,
+      'siteId': siteId,
+      'position': position?.toJson(),
+      'site': site?.toJson(),
+    };
+  }
+}
+
+class Position {
+  final String id;
+  final String positionId;
+  final String name;
+
+  Position({
+    required this.id,
+    required this.positionId,
+    required this.name,
+  });
+
+  factory Position.fromJson(Map<String, dynamic> json) {
+    return Position(
+      id: json['id'] as String? ?? '',
+      positionId: json['positionId'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'positionId': positionId,
+      'name': name,
+    };
+  }
+}
+
+class Site {
+  final String id;
+  final String siteId;
+  final String name;
+
+  Site({
+    required this.id,
+    required this.siteId,
+    required this.name,
+  });
+
+  factory Site.fromJson(Map<String, dynamic> json) {
+    return Site(
+      id: json['id'] as String? ?? '',
+      siteId: json['siteId'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'siteId': siteId,
+      'name': name,
     };
   }
 }

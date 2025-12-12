@@ -41,11 +41,11 @@ class DailyActivity {
 
   factory DailyActivity.fromJson(Map<String, dynamic> json) {
     return DailyActivity(
-      id: json['id'] as String,
-      userId: json['userId'] as String,
-      date: json['date'] as String,
-      summary: json['summary'] as String,
-      sentiment: json['sentiment'] as String,
+      id: json['id'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
+      date: json['date'] as String? ?? '',
+      summary: json['summary'] as String? ?? '',
+      sentiment: json['sentiment'] as String? ?? 'netral',
       focusHours: json['focusHours'] as int? ?? 0,
       blockers: (json['blockers'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -71,7 +71,7 @@ class DailyActivity {
           : null,
       latitude: json['latitude'] != null ? (json['latitude'] as num).toDouble() : null,
       longitude: json['longitude'] != null ? (json['longitude'] as num).toDouble() : null,
-      createdAt: json['createdAt'] as String,
+      createdAt: json['createdAt'] as String? ?? '',
       isRead: json['isRead'] as bool?,
       viewsCount: json['viewsCount'] != null ? (json['viewsCount'] as num).toInt() : null,
     );
@@ -124,8 +124,8 @@ class SecurityCheckpoint {
     }
     
     return SecurityCheckpoint(
-      id: json['id'] as String,
-      name: json['name'] as String,
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
       completed: json['completed'] as bool? ?? false,
       timestamp: json['timestamp'] as String?,
       photoUrl: json['photoUrl'] as String?,

@@ -21,11 +21,11 @@ class DailyShift {
 
   factory DailyShift.fromJson(Map<String, dynamic> json) {
     return DailyShift(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      code: json['code'] as String,
-      startTime: json['startTime'] as String,
-      endTime: json['endTime'] as String,
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      code: json['code'] as String? ?? '',
+      startTime: json['startTime'] as String? ?? '08:00',
+      endTime: json['endTime'] as String? ?? '17:00',
       color: json['color'] as String?,
       isWfh: json['isWfh'] as bool? ?? false,
       pattern: json['pattern'] != null
@@ -48,8 +48,8 @@ class ShiftPattern {
 
   factory ShiftPattern.fromJson(Map<String, dynamic> json) {
     return ShiftPattern(
-      id: json['id'] as String,
-      name: json['name'] as String,
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
       description: json['description'] as String?,
     );
   }

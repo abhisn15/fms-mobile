@@ -58,7 +58,7 @@ class AuthProvider with ChangeNotifier {
         notifyListeners();
         return true;
       } else {
-        _error = result['message'] as String;
+        _error = result['message'] as String? ?? 'Login gagal';
         _isLoading = false;
         notifyListeners();
         return false;

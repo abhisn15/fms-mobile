@@ -93,7 +93,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       keyboardType: TextInputType.text,
                       decoration: InputDecoration(
                         labelText: 'Email atau NIK KTP',
-                        hintText: 'contoh: user@email.com atau 3372013009110002',
+                        hintText: 'contoh: user@email.com atau 3172xxxxxxxxxxxx (16 digit)',
                         prefixIcon: const Icon(Icons.person_outlined),
                         border: const OutlineInputBorder(),
                         hintStyle: TextStyle(
@@ -188,6 +188,31 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ],
+                    // Copyright Footer
+                    const SizedBox(height: 48),
+                    Divider(
+                      color: Colors.grey[300],
+                      thickness: 1,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      '© ${DateTime.now().year} TPM Group. All rights reserved.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Atenim Workforce Hub - Powered by TPM Group',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[500],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),

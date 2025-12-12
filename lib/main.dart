@@ -22,7 +22,11 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Load environment variables
-  await dotenv.load(fileName: ".env");
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    // Silently use default configuration
+  }
   
   // Initialize Indonesian locale data for DateFormat
   await initializeDateFormatting('id_ID', null);

@@ -21,13 +21,6 @@ class ActivityFormScreen extends StatefulWidget {
 class _ActivityFormScreenState extends State<ActivityFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _summaryController = TextEditingController();
-  final _notesController = TextEditingController();
-  final _focusHoursController = TextEditingController(text: '0');
-  final _blockersController = TextEditingController();
-  final _highlightsController = TextEditingController();
-  final _plansController = TextEditingController();
-
-  String _selectedSentiment = 'netral';
   List<File> _selectedPhotos = [];
   List<String> _existingPhotoUrls = []; // For edit mode
   bool _isLoadingActivity = false;
@@ -52,12 +45,6 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
     if (activity != null && mounted) {
       setState(() {
         _summaryController.text = activity.summary;
-        _selectedSentiment = activity.sentiment;
-        _focusHoursController.text = activity.focusHours.toString();
-        _blockersController.text = activity.blockers.join('\n');
-        _highlightsController.text = activity.highlights.join('\n');
-        _plansController.text = activity.plans.join('\n');
-        _notesController.text = activity.notes ?? '';
         _existingPhotoUrls = activity.photoUrls ?? [];
         _isLoadingActivity = false;
       });
@@ -80,11 +67,6 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
   @override
   void dispose() {
     _summaryController.dispose();
-    _notesController.dispose();
-    _focusHoursController.dispose();
-    _blockersController.dispose();
-    _highlightsController.dispose();
-    _plansController.dispose();
     super.dispose();
   }
 
@@ -154,23 +136,10 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
     }
   }
 
-  List<String> _parseList(String text) {
-    return text
-        .split('\n')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-  }
-
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
-
-    final blockers = _parseList(_blockersController.text);
-    final highlights = _parseList(_highlightsController.text);
-    final plans = _parseList(_plansController.text);
-    final focusHours = int.tryParse(_focusHoursController.text) ?? 0;
 
     final activityProvider = Provider.of<ActivityProvider>(context, listen: false);
     bool success;
@@ -180,14 +149,6 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
       success = await activityProvider.updateActivity(
         id: widget.activityId!,
         summary: _summaryController.text.trim(),
-        sentiment: _selectedSentiment,
-        focusHours: focusHours,
-        blockers: blockers,
-        highlights: highlights,
-        plans: plans,
-        notes: _notesController.text.trim().isEmpty
-            ? null
-            : _notesController.text.trim(),
         newPhotos: _selectedPhotos,
         existingPhotoUrls: _existingPhotoUrls,
       );
@@ -195,14 +156,6 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
       // Create mode
       success = await activityProvider.submitDailyActivity(
         summary: _summaryController.text.trim(),
-        sentiment: _selectedSentiment,
-        focusHours: focusHours,
-        blockers: blockers,
-        highlights: highlights,
-        plans: plans,
-        notes: _notesController.text.trim().isEmpty
-            ? null
-            : _notesController.text.trim(),
         photos: _selectedPhotos,
       );
     }
@@ -251,18 +204,18 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Summary
+            // Keterangan
             TextFormField(
               controller: _summaryController,
               decoration: const InputDecoration(
-                labelText: 'Summary *',
-                hintText: 'Ringkasan aktivitas hari ini',
+                labelText: 'Keterangan *',
+                hintText: 'Ceritakan apa yang telah Anda kerjakan hari ini...',
                 border: OutlineInputBorder(),
               ),
-              maxLines: 3,
+              maxLines: 5,
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return 'Summary wajib diisi';
+                  return 'Keterangan wajib diisi';
                 }
                 return null;
               },
@@ -294,88 +247,6 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
                   style: const TextStyle(fontSize: 16),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            // Sentiment
-            DropdownButtonFormField<String>(
-              initialValue: _selectedSentiment,
-              decoration: const InputDecoration(
-                labelText: 'Sentiment *',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(value: 'positif', child: Text('Positif')),
-                DropdownMenuItem(value: 'netral', child: Text('Netral')),
-                DropdownMenuItem(value: 'negatif', child: Text('Negatif')),
-              ],
-              onChanged: (value) {
-                setState(() {
-                  _selectedSentiment = value!;
-                });
-              },
-            ),
-            const SizedBox(height: 16),
-            // Focus Hours
-            TextFormField(
-              controller: _focusHoursController,
-              decoration: const InputDecoration(
-                labelText: 'Focus Hours',
-                hintText: '0',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value != null && value.isNotEmpty) {
-                  final hours = int.tryParse(value);
-                  if (hours == null || hours < 0) {
-                    return 'Masukkan angka yang valid';
-                  }
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            // Highlights
-            TextFormField(
-              controller: _highlightsController,
-              decoration: const InputDecoration(
-                labelText: 'Highlights',
-                hintText: 'Satu per baris',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 5,
-            ),
-            const SizedBox(height: 16),
-            // Blockers
-            TextFormField(
-              controller: _blockersController,
-              decoration: const InputDecoration(
-                labelText: 'Blockers',
-                hintText: 'Satu per baris',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 5,
-            ),
-            const SizedBox(height: 16),
-            // Plans
-            TextFormField(
-              controller: _plansController,
-              decoration: const InputDecoration(
-                labelText: 'Plans',
-                hintText: 'Satu per baris',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 5,
-            ),
-            const SizedBox(height: 16),
-            // Notes
-            TextFormField(
-              controller: _notesController,
-              decoration: const InputDecoration(
-                labelText: 'Notes',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
             ),
             const SizedBox(height: 16),
             // Photos Section

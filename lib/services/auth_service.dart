@@ -49,9 +49,9 @@ class AuthService {
         if (e.type == DioExceptionType.connectionTimeout ||
             e.type == DioExceptionType.receiveTimeout ||
             e.type == DioExceptionType.sendTimeout) {
-          errorMessage = 'Koneksi timeout. Pastikan backend server berjalan di port 3001.\n\nJalankan: cd fms && npm run dev';
+          errorMessage = 'Koneksi timeout. Pastikan backend server berjalan dan dapat diakses.';
         } else if (e.type == DioExceptionType.connectionError) {
-          errorMessage = 'Tidak dapat terhubung ke server.\n\nPastikan:\n1. Backend berjalan di http://localhost:3001\n2. Jalankan: cd fms && npm run dev';
+          errorMessage = 'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
         } else {
           errorMessage = e.message ?? 'Login gagal';
         }

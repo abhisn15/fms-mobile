@@ -1,4 +1,4 @@
-package com.example.fms_mobile
+package com.atenim
 
 import io.flutter.embedding.android.FlutterActivity
 

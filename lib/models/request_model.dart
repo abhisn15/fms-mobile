@@ -25,16 +25,16 @@ class LeaveRequest {
 
   factory LeaveRequest.fromJson(Map<String, dynamic> json) {
     return LeaveRequest(
-      id: json['id'] as String,
-      userId: json['userId'] as String,
-      type: json['type'] as String,
-      status: json['status'] as String,
-      reason: json['reason'] as String,
-      startDate: json['startDate'] as String,
-      endDate: json['endDate'] as String,
+      id: json['id'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
+      type: json['type'] as String? ?? 'izin',
+      status: json['status'] as String? ?? 'pending',
+      reason: json['reason'] as String? ?? '',
+      startDate: json['startDate'] as String? ?? '',
+      endDate: json['endDate'] as String? ?? '',
       reviewerId: json['reviewerId'] as String?,
-      createdAt: json['createdAt'] as String,
-      updatedAt: json['updatedAt'] as String,
+      createdAt: json['createdAt'] as String? ?? '',
+      updatedAt: json['updatedAt'] as String? ?? '',
     );
   }
 

@@ -53,7 +53,7 @@ class RequestProvider with ChangeNotifier {
         await loadRequests();
         return true;
       } else {
-        _error = result['message'] as String;
+        _error = result['message'] as String? ?? 'Operasi gagal';
         return false;
       }
     } catch (e) {

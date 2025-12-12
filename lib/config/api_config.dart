@@ -1,11 +1,30 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiConfig {
   // Load from environment variables
   // Default values for development if .env is not loaded
   static String get baseUrl {
-    return dotenv.env['API_BASE_URL'] ?? 'http://10.0.2.2:3001';
+    final envUrl = dotenv.env['API_BASE_URL'];
+    
+    if (envUrl != null && envUrl.isNotEmpty) {
+      // Remove trailing slash if exists
+      var cleanUrl = envUrl.trim().replaceAll(RegExp(r'/$'), '');
+      
+      // Auto-fix common typos
+      if (cleanUrl.contains('tpm-faciity.com')) {
+        cleanUrl = cleanUrl.replaceAll('tpm-faciity.com', 'tpm-facility.com');
+      }
+      
+      // Validate URL format
+      if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+        cleanUrl = 'https://$cleanUrl';
+      }
+      
+      return cleanUrl;
+    }
+    
+    // Default untuk Android Emulator
+    return 'http://10.0.2.2:3001';
   }
   
   static String get gcsBucketName {
@@ -48,7 +67,6 @@ class ApiConfig {
     if (url.startsWith('http://') || url.startsWith('https://')) {
       // Check if it's a GCS URL
       if (url.contains('storage.googleapis.com')) {
-        debugPrint('[ApiConfig] ✓ Using GCS URL: $url');
         return url;
       }
       // Other full URLs (CDN, etc)
@@ -56,34 +74,26 @@ class ApiConfig {
     }
     
     // If relative URL starting with /uploads/, it's local fallback
-    // Convert to GCS URL by removing /uploads/ prefix
+    // Use baseUrl directly (don't convert to GCS URL since file is stored locally)
     // Local: /uploads/activities/user/timestamp/file.webp
-    // GCS:   https://storage.googleapis.com/bucket/activities/user/timestamp/file.webp
+    // Should return: https://your-domain.com/uploads/activities/user/timestamp/file.webp
     if (url.startsWith('/uploads/')) {
-      // Remove /uploads/ prefix to get GCS path
-      final gcsPath = url.substring('/uploads/'.length); // Remove /uploads/ prefix
-      final gcsUrl = 'https://storage.googleapis.com/$gcsBucketName/$gcsPath';
-      debugPrint('[ApiConfig] ⚠ Converted local URL to GCS: $url -> $gcsUrl');
-      return gcsUrl;
+      // For local storage, just prepend baseUrl
+      return '$baseUrl$url';
     }
     
     // If relative URL (starts with /) but not /uploads/, prepend baseUrl
-    // This should not happen if GCS is properly configured
     if (url.startsWith('/')) {
-      debugPrint('[ApiConfig] ⚠ Using localhost fallback: $url - Backend should return GCS URL');
       return '$baseUrl$url';
     }
     
     // If it's a GCS path without protocol (e.g., "checkins/user/timestamp/file.webp")
     // Construct full GCS URL
     if (url.contains('/') && !url.startsWith('uploads/')) {
-      final gcsUrl = 'https://storage.googleapis.com/$gcsBucketName/$url';
-      debugPrint('[ApiConfig] ✓ Constructed GCS URL from path: $gcsUrl');
-      return gcsUrl;
+      return 'https://storage.googleapis.com/$gcsBucketName/$url';
     }
     
     // Otherwise, assume it's relative and prepend baseUrl with /
-    debugPrint('[ApiConfig] ⚠ Unknown URL format, using baseUrl: $url');
     return '$baseUrl/$url';
   }
 }

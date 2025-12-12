@@ -53,3 +53,10 @@ app.*.map.json
 .env.staging
 # Allow .env.example untuk template
 !.env.example
+
+# Android Keystore - JANGAN commit keystore dan key.properties!
+*.jks
+*.keystore
+android/key.properties
+# Allow key.properties.example untuk template
+!android/key.properties.example

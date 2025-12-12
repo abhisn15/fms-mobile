@@ -38,11 +38,11 @@ class ActivityProvider with ChangeNotifier {
 
   Future<bool> submitDailyActivity({
     required String summary,
-    required String sentiment,
-    required int focusHours,
-    required List<String> blockers,
-    required List<String> highlights,
-    required List<String> plans,
+    String? sentiment,
+    int? focusHours,
+    List<String>? blockers,
+    List<String>? highlights,
+    List<String>? plans,
     String? notes,
     List<File>? photos,
   }) async {
@@ -66,7 +66,7 @@ class ActivityProvider with ChangeNotifier {
         await loadActivities();
         return true;
       } else {
-        _error = result['message'] as String;
+        _error = result['message'] as String? ?? 'Operasi gagal';
         return false;
       }
     } catch (e) {
@@ -98,7 +98,7 @@ class ActivityProvider with ChangeNotifier {
         await loadActivities();
         return true;
       } else {
-        _error = result['message'] as String;
+        _error = result['message'] as String? ?? 'Operasi gagal';
         return false;
       }
     } catch (e) {
@@ -139,11 +139,11 @@ class ActivityProvider with ChangeNotifier {
   Future<bool> updateActivity({
     required String id,
     required String summary,
-    required String sentiment,
-    required int focusHours,
-    required List<String> blockers,
-    required List<String> highlights,
-    required List<String> plans,
+    String? sentiment,
+    int? focusHours,
+    List<String>? blockers,
+    List<String>? highlights,
+    List<String>? plans,
     String? notes,
     List<File>? newPhotos,
     List<String>? existingPhotoUrls,
@@ -172,7 +172,7 @@ class ActivityProvider with ChangeNotifier {
         debugPrint('[ActivityProvider] ✓ Activity updated');
         return true;
       } else {
-        _error = result['message'] as String;
+        _error = result['message'] as String? ?? 'Operasi gagal';
         return false;
       }
     } catch (e) {
@@ -197,7 +197,7 @@ class ActivityProvider with ChangeNotifier {
         debugPrint('[ActivityProvider] ✓ Activity deleted');
         return true;
       } else {
-        _error = result['message'] as String;
+        _error = result['message'] as String? ?? 'Operasi gagal';
         return false;
       }
     } catch (e) {

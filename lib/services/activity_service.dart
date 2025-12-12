@@ -36,35 +36,18 @@ class ActivityService {
 
   Future<Map<String, dynamic>> submitDailyActivity({
     required String summary,
-    required String sentiment,
-    required int focusHours,
-    required List<String> blockers,
-    required List<String> highlights,
-    required List<String> plans,
+    String? sentiment,
+    int? focusHours,
+    List<String>? blockers,
+    List<String>? highlights,
+    List<String>? plans,
     String? notes,
     List<File> photos = const [],
   }) async {
     try {
-      Position? position;
-      try {
-        position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-        );
-      } catch (e) {
-        // GPS opsional
-      }
-
-      // Prepare form data
+      // Prepare form data - hanya summary dan foto
       final Map<String, dynamic> formDataMap = {
         'summary': summary,
-        'sentiment': sentiment,
-        'focusHours': focusHours.toString(),
-        'highlights': jsonEncode(highlights),
-        'blockers': jsonEncode(blockers),
-        'plans': jsonEncode(plans),
-        if (notes != null && notes.isNotEmpty) 'notes': notes,
-        if (position != null) 'latitude': position.latitude.toString(),
-        if (position != null) 'longitude': position.longitude.toString(),
       };
 
       // Add multiple photos
@@ -196,37 +179,21 @@ class ActivityService {
   Future<Map<String, dynamic>> updateActivity({
     required String id,
     required String summary,
-    required String sentiment,
-    required int focusHours,
-    required List<String> blockers,
-    required List<String> highlights,
-    required List<String> plans,
+    String? sentiment,
+    int? focusHours,
+    List<String>? blockers,
+    List<String>? highlights,
+    List<String>? plans,
     String? notes,
     List<File> newPhotos = const [],
     List<String> existingPhotoUrls = const [],
   }) async {
     try {
       debugPrint('[ActivityService] Updating activity: $id');
-      Position? position;
-      try {
-        position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-        );
-      } catch (e) {
-        // GPS opsional
-      }
 
-      // Prepare form data
+      // Prepare form data - hanya summary dan foto
       final Map<String, dynamic> formDataMap = {
         'summary': summary,
-        'sentiment': sentiment,
-        'focusHours': focusHours.toString(),
-        'highlights': jsonEncode(highlights),
-        'blockers': jsonEncode(blockers),
-        'plans': jsonEncode(plans),
-        if (notes != null && notes.isNotEmpty) 'notes': notes,
-        if (position != null) 'latitude': position.latitude.toString(),
-        if (position != null) 'longitude': position.longitude.toString(),
       };
 
       // Add existing photo URLs

@@ -8,7 +8,9 @@ class AttendanceRecord {
   final String? shiftId;
   final String? notes;
   final String? photoUrl;
-  final Location? location;
+  final Location? location; // Deprecated: use checkInLocation and checkOutLocation instead
+  final Location? checkInLocation;
+  final Location? checkOutLocation;
   final bool isAutoCheckout;
   final bool needsValidation;
 
@@ -23,16 +25,18 @@ class AttendanceRecord {
     this.notes,
     this.photoUrl,
     this.location,
+    this.checkInLocation,
+    this.checkOutLocation,
     this.isAutoCheckout = false,
     this.needsValidation = false,
   });
 
   factory AttendanceRecord.fromJson(Map<String, dynamic> json) {
     return AttendanceRecord(
-      id: json['id'] as String,
-      userId: json['userId'] as String,
-      date: json['date'] as String,
-      status: json['status'] as String,
+      id: json['id'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
+      date: json['date'] as String? ?? '',
+      status: json['status'] as String? ?? 'absent',
       checkIn: json['checkIn'] as String?,
       checkOut: json['checkOut'] as String?,
       shiftId: json['shiftId'] as String?,
@@ -40,6 +44,12 @@ class AttendanceRecord {
       photoUrl: json['photoUrl'] as String?,
       location: json['location'] != null
           ? Location.fromJson(json['location'] as Map<String, dynamic>)
+          : null, // Keep for backward compatibility
+      checkInLocation: json['checkInLocation'] != null
+          ? Location.fromJson(json['checkInLocation'] as Map<String, dynamic>)
+          : null,
+      checkOutLocation: json['checkOutLocation'] != null
+          ? Location.fromJson(json['checkOutLocation'] as Map<String, dynamic>)
           : null,
       isAutoCheckout: json['isAutoCheckout'] as bool? ?? false,
       needsValidation: json['needsValidation'] as bool? ?? false,
@@ -57,7 +67,9 @@ class AttendanceRecord {
       'shiftId': shiftId,
       'notes': notes,
       'photoUrl': photoUrl,
-      'location': location?.toJson(),
+      'location': location?.toJson(), // Keep for backward compatibility
+      'checkInLocation': checkInLocation?.toJson(),
+      'checkOutLocation': checkOutLocation?.toJson(),
       'isAutoCheckout': isAutoCheckout,
       'needsValidation': needsValidation,
     };

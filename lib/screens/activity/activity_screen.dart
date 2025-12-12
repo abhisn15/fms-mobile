@@ -18,7 +18,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
   // Default: bulan ini (tanggal 1 sampai hari ini)
   late DateTime _startDate = _getDefaultStartDate();
   late DateTime _endDate = _getDefaultEndDate();
-  String? _selectedSentiment;
   int _currentPage = 1;
   final int _itemsPerPage = 10;
 
@@ -50,12 +49,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
       appBar: AppBar(
         title: const Text('Aktivitas Harian'),
         actions: [
-          if (_selectedSentiment != null)
-            IconButton(
-              icon: const Icon(Icons.filter_alt),
-              onPressed: () => _showSentimentFilterDialog(context),
-              tooltip: 'Filter Sentiment',
-            ),
           IconButton(
             icon: const Icon(Icons.date_range),
             onPressed: () => _selectDateRange(context),
@@ -124,25 +117,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
               ],
             ),
           ),
-          // Sentiment Filter Chip (if selected)
-          if (_selectedSentiment != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Chip(
-                    label: Text('Sentiment: ${_selectedSentiment!.toUpperCase()}'),
-                    onDeleted: () {
-                      setState(() {
-                        _selectedSentiment = null;
-                        _currentPage = 1;
-                      });
-                    },
-                    deleteIcon: const Icon(Icons.close, size: 18),
-                  ),
-                ],
-              ),
-            ),
           // Activity List
           Expanded(
             child: Consumer<ActivityProvider>(
@@ -185,10 +159,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   if (activityDate.isBefore(_startDate)) return false;
                   if (activityDate.isAfter(_endDate.add(const Duration(days: 1)))) return false;
                   
-                  // Filter by sentiment
-                  if (_selectedSentiment != null && activity.sentiment.toLowerCase() != _selectedSentiment!.toLowerCase()) {
-                    return false;
-                  }
+                  // No sentiment filter anymore
                   
                   return true;
                 }).toList();
@@ -200,9 +171,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   bool includeToday = true;
                   if (todayDate.isBefore(_startDate)) includeToday = false;
                   if (todayDate.isAfter(_endDate.add(const Duration(days: 1)))) includeToday = false;
-                  if (_selectedSentiment != null && today.sentiment.toLowerCase() != _selectedSentiment!.toLowerCase()) {
-                    includeToday = false;
-                  }
+                  // No sentiment filter anymore
                   if (includeToday) filteredToday = today;
                 }
 
@@ -391,60 +360,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
     }
   }
 
-  Future<void> _showSentimentFilterDialog(BuildContext context) async {
-    String? tempSentiment = _selectedSentiment;
-
-    await showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Filter Sentiment'),
-          content: DropdownButtonFormField<String>(
-            value: tempSentiment,
-            decoration: const InputDecoration(
-              labelText: 'Pilih Sentiment',
-              border: OutlineInputBorder(),
-            ),
-            items: [
-              const DropdownMenuItem(value: null, child: Text('Semua')),
-              const DropdownMenuItem(value: 'positif', child: Text('Positif')),
-              const DropdownMenuItem(value: 'netral', child: Text('Netral')),
-              const DropdownMenuItem(value: 'negatif', child: Text('Negatif')),
-            ],
-            onChanged: (value) {
-              setDialogState(() {
-                tempSentiment = value;
-              });
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                setDialogState(() {
-                  tempSentiment = null;
-                });
-              },
-              child: const Text('Reset'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Batal'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _selectedSentiment = tempSentiment;
-                  _currentPage = 1; // Reset to first page
-                });
-                Navigator.pop(context);
-              },
-              child: const Text('Terapkan'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildActivityCard(BuildContext context, DailyActivity activity, {bool isToday = false}) {
     return Card(
@@ -453,10 +368,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
         leading: Stack(
           children: [
             CircleAvatar(
-              backgroundColor: _getSentimentColor(activity.sentiment).withOpacity(0.2),
-              child: Icon(
-                _getSentimentIcon(activity.sentiment),
-                color: _getSentimentColor(activity.sentiment),
+              backgroundColor: Colors.blue.withOpacity(0.2),
+              child: const Icon(
+                Icons.assignment,
+                color: Colors.blue,
               ),
             ),
             // Read status indicator
@@ -591,17 +506,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildInfoRow('Summary', activity.summary),
-                _buildInfoRow('Sentiment', activity.sentiment),
-                _buildInfoRow('Focus Hours', '${activity.focusHours} jam'),
-                if (activity.highlights.isNotEmpty)
-                  _buildListSection('Highlights', activity.highlights),
-                if (activity.blockers.isNotEmpty)
-                  _buildListSection('Blockers', activity.blockers),
-                if (activity.plans.isNotEmpty)
-                  _buildListSection('Plans', activity.plans),
-                if (activity.notes != null && activity.notes!.isNotEmpty)
-                  _buildInfoRow('Notes', activity.notes!),
+                _buildInfoRow('Keterangan', activity.summary),
                 if (activity.photoUrls != null && activity.photoUrls!.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
@@ -720,27 +625,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
     );
   }
 
-  Color _getSentimentColor(String sentiment) {
-    switch (sentiment.toLowerCase()) {
-      case 'positif':
-        return Colors.green;
-      case 'negatif':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  IconData _getSentimentIcon(String sentiment) {
-    switch (sentiment.toLowerCase()) {
-      case 'positif':
-        return Icons.sentiment_satisfied;
-      case 'negatif':
-        return Icons.sentiment_dissatisfied;
-      default:
-        return Icons.sentiment_neutral;
-    }
-  }
 
 }
 

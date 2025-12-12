@@ -383,31 +383,52 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     final shifts = shiftProvider.shifts;
     final todayShift = shiftProvider.todayShift;
     
-    // Jika ada shift yang di-assign hari ini, gunakan itu
+    // Validasi: Shift harus dipilih terlebih dahulu
     DailyShift? selectedShift = todayShift ?? _selectedShift;
-    if (selectedShift == null && shifts.isNotEmpty) {
-      // Jika tidak ada shift yang di-assign dan belum dipilih, pilih shift pertama
-      selectedShift = shifts.first;
-      _selectedShift = selectedShift;
-    }
-
+    
     if (selectedShift == null) {
-      debugPrint('[HomeTab] ✗ No shift available');
+      debugPrint('[HomeTab] ✗ No shift selected');
       if (mounted) {
-        ToastHelper.showWarning(context, 'Tidak ada shift yang tersedia');
+        if (shifts.isEmpty) {
+          ToastHelper.showWarning(context, 'Tidak ada shift yang tersedia');
+        } else {
+          // Tampilkan dialog pilih shift
+          final chosenShift = await showDialog<DailyShift>(
+            context: context,
+            builder: (context) => ShiftSelectionDialog(
+              shifts: shifts,
+              selectedShift: null,
+              onShiftSelected: (shift) {
+                Navigator.of(context).pop(shift);
+              },
+            ),
+          );
+          
+          if (chosenShift == null) {
+            // User membatalkan pemilihan shift
+            return;
+          }
+          
+          selectedShift = chosenShift;
+          _selectedShift = chosenShift;
+        }
       }
-      return;
+      
+      if (selectedShift == null) {
+        return; // Tidak bisa check-in tanpa shift
+      }
     }
 
     debugPrint('[HomeTab] Selected shift: ${selectedShift.name} (${selectedShift.id})');
     debugPrint('[HomeTab] Opening camera for check-in selfie...');
 
-    // Buka kamera untuk selfie
+    // Buka kamera untuk selfie (hanya kamera, tidak boleh galeri)
     final photo = await Navigator.push<File>(
       context,
       MaterialPageRoute(
         builder: (_) => const CameraScreen(
           title: 'Ambil Selfie untuk Check-In',
+          allowGallery: false, // Check-in hanya boleh kamera
         ),
       ),
     );
@@ -417,22 +438,43 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       debugPrint('[HomeTab] Submitting check-in...');
       final attendanceProvider =
           Provider.of<AttendanceProvider>(context, listen: false);
-      final success = await attendanceProvider.checkIn(
-        photo: photo,
-        shiftId: selectedShift.id,
-      );
+      
+      try {
+        final success = await attendanceProvider.checkIn(
+          photo: photo,
+          shiftId: selectedShift.id,
+        );
 
-      if (mounted) {
-        debugPrint('[HomeTab] Check-in result: $success');
-        if (success) {
-          ToastHelper.showSuccess(context, 'Check-in berhasil!');
-          debugPrint('[HomeTab] Starting duration timer...');
-          // Parse and start duration timer
-          final today = attendanceProvider.todayAttendance;
-          _checkInDateTime = _parseCheckInDateTime(today);
-          _startDurationTimer();
-        } else {
-          ToastHelper.showError(context, attendanceProvider.error ?? 'Check-in gagal');
+        if (mounted) {
+          debugPrint('[HomeTab] Check-in result: $success');
+          if (success) {
+            // Refresh attendance data untuk memastikan data terbaru
+            final now = DateTime.now();
+            final startDate = DateTime(now.year, now.month, 1);
+            await attendanceProvider.loadAttendance(
+              startDate: startDate,
+              endDate: now,
+              forceRefresh: true,
+            );
+            
+            if (mounted) {
+              ToastHelper.showSuccess(context, 'Check-in berhasil!');
+              debugPrint('[HomeTab] Starting duration timer...');
+              // Parse and start duration timer
+              final today = attendanceProvider.todayAttendance;
+              _checkInDateTime = _parseCheckInDateTime(today);
+              _startDurationTimer();
+            }
+          } else {
+            if (mounted) {
+              ToastHelper.showError(context, attendanceProvider.error ?? 'Check-in gagal');
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[HomeTab] Error during check-in: $e');
+        if (mounted) {
+          ToastHelper.showError(context, 'Terjadi kesalahan saat check-in: $e');
         }
       }
     } else {
@@ -444,12 +486,13 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     debugPrint('[HomeTab] Check-out button pressed');
     debugPrint('[HomeTab] Opening camera for check-out selfie...');
 
-    // Buka kamera untuk selfie
+    // Buka kamera untuk selfie (hanya kamera, tidak boleh galeri)
     final photo = await Navigator.push<File>(
       context,
       MaterialPageRoute(
         builder: (_) => const CameraScreen(
           title: 'Ambil Selfie untuk Check-Out',
+          allowGallery: false, // Check-out hanya boleh kamera
         ),
       ),
     );
@@ -459,26 +502,47 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       debugPrint('[HomeTab] Submitting check-out...');
       final attendanceProvider =
           Provider.of<AttendanceProvider>(context, listen: false);
-      final success = await attendanceProvider.checkOut(photo: photo);
+      
+      try {
+        final success = await attendanceProvider.checkOut(photo: photo);
 
-      if (mounted) {
-        debugPrint('[HomeTab] Check-out result: $success');
-        if (success) {
-          ToastHelper.showSuccess(context, 'Check-out berhasil!');
-          // Stop timer immediately after successful check-out
-          debugPrint('[HomeTab] Stopping duration timer after check-out');
-          _durationTimer?.cancel();
-          // Parse check-in untuk menghitung total durasi (tidak perlu timer lagi)
-          final updatedToday = attendanceProvider.todayAttendance;
-          _checkInDateTime = updatedToday != null ? _parseCheckInDateTime(updatedToday) : null;
-          // Update duration notifier dengan total durasi (fixed)
-          if (_checkInDateTime != null && updatedToday != null) {
-            final checkOutDateTime = _parseCheckOutDateTime(updatedToday);
-            final totalDuration = _formatDuration(_checkInDateTime, checkOutDateTime: checkOutDateTime);
-            _durationNotifier.value = totalDuration;
+        if (mounted) {
+          debugPrint('[HomeTab] Check-out result: $success');
+          if (success) {
+            // Refresh attendance data untuk memastikan data terbaru
+            final now = DateTime.now();
+            final startDate = DateTime(now.year, now.month, 1);
+            await attendanceProvider.loadAttendance(
+              startDate: startDate,
+              endDate: now,
+              forceRefresh: true,
+            );
+            
+            if (mounted) {
+              ToastHelper.showSuccess(context, 'Check-out berhasil!');
+              // Stop timer immediately after successful check-out
+              debugPrint('[HomeTab] Stopping duration timer after check-out');
+              _durationTimer?.cancel();
+              // Parse check-in untuk menghitung total durasi (tidak perlu timer lagi)
+              final updatedToday = attendanceProvider.todayAttendance;
+              _checkInDateTime = updatedToday != null ? _parseCheckInDateTime(updatedToday) : null;
+              // Update duration notifier dengan total durasi (fixed)
+              if (_checkInDateTime != null && updatedToday != null) {
+                final checkOutDateTime = _parseCheckOutDateTime(updatedToday);
+                final totalDuration = _formatDuration(_checkInDateTime, checkOutDateTime: checkOutDateTime);
+                _durationNotifier.value = totalDuration;
+              }
+            }
+          } else {
+            if (mounted) {
+              ToastHelper.showError(context, attendanceProvider.error ?? 'Check-out gagal');
+            }
           }
-        } else {
-          ToastHelper.showError(context, attendanceProvider.error ?? 'Check-out gagal');
+        }
+      } catch (e) {
+        debugPrint('[HomeTab] Error during check-out: $e');
+        if (mounted) {
+          ToastHelper.showError(context, 'Terjadi kesalahan saat check-out: $e');
         }
       }
     } else {
@@ -720,33 +784,120 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Location Section
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.location_on_outlined, size: 18, color: Colors.grey[600]),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              hasCheckedIn
-                                  ? (today?.location != null
-                                      ? '${today!.location!.lat.toStringAsFixed(6)}, ${today.location!.lng.toStringAsFixed(6)}'
-                                      : 'Lokasi direkam saat check-in')
-                                  : 'Lokasi akan direkam saat check-in',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[700],
+                    // Location Section - Check-In and Check-Out
+                    if (hasCheckedIn || hasCheckedOut) ...[
+                      // Check-In Location
+                      if (hasCheckedIn)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.green[50],
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.green[200]!),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.login, size: 18, color: Colors.green[700]),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Lokasi Check-In',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green[900],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      today?.checkInLocation != null
+                                          ? '${today!.checkInLocation!.lat.toStringAsFixed(6)}, ${today.checkInLocation!.lng.toStringAsFixed(6)}'
+                                          : (today?.location != null && !hasCheckedOut
+                                              ? '${today!.location!.lat.toStringAsFixed(6)}, ${today.location!.lng.toStringAsFixed(6)}'
+                                              : 'Lokasi tidak tersedia'),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[700],
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      // Check-Out Location
+                      if (hasCheckedOut)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue[50],
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.blue[200]!),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.logout, size: 18, color: Colors.blue[700]),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Lokasi Check-Out',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue[900],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      today?.checkOutLocation != null
+                                          ? '${today!.checkOutLocation!.lat.toStringAsFixed(6)}, ${today.checkOutLocation!.lng.toStringAsFixed(6)}'
+                                          : (today?.location != null
+                                              ? '${today!.location!.lat.toStringAsFixed(6)}, ${today.location!.lng.toStringAsFixed(6)}'
+                                              : 'Lokasi tidak tersedia'),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[700],
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ] else
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.location_on_outlined, size: 18, color: Colors.grey[600]),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Lokasi akan direkam saat check-in',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[700],
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
                     // Shift Selection (hanya muncul jika belum check-in)
                     if (!hasCheckedIn) ...[
                       const SizedBox(height: 16),
@@ -763,6 +914,10 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                       _buildShiftSelectionInCard(context),
                     ],
                     const SizedBox(height: 20),
+                    // Warning text jika shift belum dipilih (hanya muncul jika belum check-in)
+                    if (!hasCheckedIn)
+                      _buildShiftWarning(context),
+                    if (!hasCheckedIn) const SizedBox(height: 12),
                     // Check-In/Check-Out Button
                     if (!hasCheckedIn)
                       _buildCheckInButton(context)
@@ -1001,16 +1156,62 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     );
   }
 
-  Widget _buildCheckInButton(BuildContext context) {
+  Widget _buildShiftWarning(BuildContext context) {
     return Consumer<ShiftProvider>(
       builder: (context, shiftProvider, _) {
         final shifts = shiftProvider.shifts;
         final todayShift = shiftProvider.todayShift;
         final hasAssignedShift = todayShift != null;
         
+        // Hanya tampilkan warning jika shift belum dipilih
+        if (hasAssignedShift || _selectedShift != null || shifts.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.amber[50],
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: Colors.amber[300]!,
+              width: 1.5,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.amber[800], size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Silakan pilih shift terlebih dahulu sebelum melakukan check-in',
+                  style: TextStyle(
+                    color: Colors.amber[900],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCheckInButton(BuildContext context) {
+    return Consumer<ShiftProvider>(
+      builder: (context, shiftProvider, _) {
+        final todayShift = shiftProvider.todayShift;
+        final hasAssignedShift = todayShift != null;
+        final hasSelectedShift = hasAssignedShift || _selectedShift != null;
+        
         return Consumer<AttendanceProvider>(
           builder: (context, attendanceProvider, _) {
-            if (attendanceProvider.isLoading) {
+            final isLoading = attendanceProvider.isLoading;
+            final isDisabled = !hasSelectedShift || isLoading;
+            
+            if (isLoading) {
               return Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1019,41 +1220,56 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Center(
-                  child: SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        'Memproses Check-In...',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               );
             }
             
             return ElevatedButton(
-              onPressed: (hasAssignedShift == false && (_selectedShift == null && shifts.isEmpty))
-                  ? null
-                  : _handleCheckIn,
+              onPressed: isDisabled ? null : _handleCheckIn,
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
+                backgroundColor: isDisabled ? Colors.grey[400] : Colors.green,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                elevation: 2,
+                elevation: isDisabled ? 0 : 2,
+                disabledBackgroundColor: Colors.grey[400],
+                disabledForegroundColor: Colors.white70,
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.login, size: 20),
-                  SizedBox(width: 8),
+                  Icon(Icons.login, size: 20, color: isDisabled ? Colors.white70 : Colors.white),
+                  const SizedBox(width: 8),
                   Text(
                     'Check-In',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
+                      color: isDisabled ? Colors.white70 : Colors.white,
                     ),
                   ),
                 ],
@@ -1068,7 +1284,14 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   Widget _buildCheckOutButton(BuildContext context) {
     return Consumer<AttendanceProvider>(
       builder: (context, attendanceProvider, _) {
-        if (attendanceProvider.isLoading) {
+        final isLoading = attendanceProvider.isLoading;
+        final today = attendanceProvider.todayAttendance;
+        final hasCheckedOut = today?.checkOut != null;
+        
+        // Disable jika sudah check-out atau sedang loading
+        final isDisabled = hasCheckedOut || isLoading;
+        
+        if (isLoading) {
           return Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1077,39 +1300,60 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Center(
-              child: SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ),
+                  SizedBox(width: 12),
+                  Text(
+                    'Memproses Check-Out...',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
             ),
           );
         }
         
         return ElevatedButton(
-          onPressed: _handleCheckOut,
+          onPressed: isDisabled ? null : _handleCheckOut,
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
+            backgroundColor: isDisabled ? Colors.grey[400] : Colors.red,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
-            elevation: 2,
+            elevation: isDisabled ? 0 : 2,
+            disabledBackgroundColor: Colors.grey[400],
+            disabledForegroundColor: Colors.white70,
           ),
-          child: const Row(
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.logout, size: 20),
-              SizedBox(width: 8),
+              Icon(
+                Icons.logout, 
+                size: 20, 
+                color: isDisabled ? Colors.white70 : Colors.white,
+              ),
+              const SizedBox(width: 8),
               Text(
-                'Check-Out',
+                hasCheckedOut ? 'Sudah Check-Out' : 'Check-Out',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
+                  color: isDisabled ? Colors.white70 : Colors.white,
                 ),
               ),
             ],

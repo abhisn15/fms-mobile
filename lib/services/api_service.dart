@@ -1,5 +1,4 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 
@@ -17,7 +16,6 @@ class ApiService {
   /// Set callback untuk handle session expired
   void setSessionExpiredCallback(SessionExpiredCallback callback) {
     _onSessionExpired = callback;
-    debugPrint('[ApiService] Session expired callback registered');
   }
   
   ApiService._internal() {
@@ -33,25 +31,17 @@ class ApiService {
     // Add interceptor untuk menambahkan cookies
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        debugPrint('[API] → ${options.method} ${options.path}');
-        if (options.queryParameters.isNotEmpty) {
-          debugPrint('[API] Query params: ${options.queryParameters}');
-        }
         // Ambil cookies dari shared preferences
         final prefs = await SharedPreferences.getInstance();
         final cookies = prefs.getString('cookies');
         if (cookies != null && cookies.isNotEmpty) {
           options.headers['Cookie'] = cookies;
-          debugPrint('[API] Cookie attached');
         }
         handler.next(options);
       },
       onResponse: (response, handler) async {
-        debugPrint('[API] ← ${response.statusCode} ${response.requestOptions.path}');
-        
         // Check for session expired in response (401/403)
         if (response.statusCode == 401 || response.statusCode == 403) {
-          debugPrint('[API] ⚠ Session expired ($response.statusCode) in response. Triggering auto logout...');
           // Trigger auto logout callback (only once)
           if (_onSessionExpired != null && !_isLoggingOut) {
             _isLoggingOut = true;
@@ -59,36 +49,26 @@ class ApiService {
           }
         }
         
-        if (response.statusCode != null && response.statusCode! >= 400) {
-          debugPrint('[API] Error Response: ${response.data}');
-        }
         // Simpan cookies dari response
         final cookies = response.headers.value('set-cookie');
         if (cookies != null) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('cookies', cookies);
-          debugPrint('[API] Cookie saved');
         }
         handler.next(response);
       },
       onError: (error, handler) {
-        debugPrint('[API] ✗ ERROR: ${error.type} - ${error.requestOptions.path}');
         if (error.response != null) {
           final statusCode = error.response?.statusCode;
-          debugPrint('[API] Error Status: $statusCode');
-          debugPrint('[API] Error Data: ${error.response?.data}');
           
           // Handle session expired (401 Unauthorized atau 403 Forbidden)
           if (statusCode == 401 || statusCode == 403) {
-            debugPrint('[API] ⚠ Session expired ($statusCode). Triggering auto logout...');
             // Trigger auto logout callback (only once)
             if (_onSessionExpired != null && !_isLoggingOut) {
               _isLoggingOut = true;
               _onSessionExpired!();
             }
           }
-        } else {
-          debugPrint('[API] Error Message: ${error.message}');
         }
         // Handle connection timeout dengan pesan yang lebih jelas
         if (error.type == DioExceptionType.connectionTimeout ||
@@ -98,14 +78,14 @@ class ApiService {
             requestOptions: error.requestOptions,
             response: error.response,
             type: error.type,
-            error: 'Koneksi timeout. Pastikan backend server berjalan di port 3001 dan dapat diakses.',
+            error: 'Koneksi timeout.',
           );
         } else if (error.type == DioExceptionType.connectionError) {
           error = DioException(
             requestOptions: error.requestOptions,
             response: error.response,
             type: error.type,
-            error: 'Tidak dapat terhubung ke server. Pastikan backend berjalan di http://localhost:3001',
+            error: 'Tidak dapat terhubung ke server.',
           );
         }
         handler.next(error);

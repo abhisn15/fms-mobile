@@ -78,15 +78,28 @@ Buat file `.env` di root folder `fms_mobile/` (copy dari `.env.example` jika ada
 
 ```env
 # API Configuration
-# Untuk development lokal Android emulator: http://10.0.2.2:3001
-# Untuk device fisik: http://<IP_KOMPUTER>:3001
-# Untuk production: https://your-domain.com
+# Pilih salah satu sesuai dengan environment Anda:
+
+# 1. Android Emulator (default)
 API_BASE_URL=http://10.0.2.2:3001
 
+# 2. iOS Simulator
+# API_BASE_URL=http://localhost:3001
+
+# 3. Physical Device (ganti dengan IP komputer Anda)
+# API_BASE_URL=http://192.168.1.100:3001
+
+# 4. Production
+# API_BASE_URL=https://atenim.tpm-facility.com
+
 # Google Cloud Storage Configuration
-# Nama bucket GCS (harus sama dengan backend)
 GCS_BUCKET_NAME=mms.mindotek.com
 ```
+
+**Cara menemukan IP komputer untuk Physical Device:**
+- Windows: `ipconfig` (lihat IPv4 Address)
+- Mac/Linux: `ifconfig` atau `ip addr` (lihat inet address)
+- Pastikan device dan komputer dalam jaringan WiFi yang sama
 
 **PENTING**: File `.env` sudah di-ignore oleh Git untuk keamanan. Jangan commit file `.env` ke repository!
 
