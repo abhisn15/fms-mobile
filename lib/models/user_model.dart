@@ -12,6 +12,8 @@ class User {
   final String? siteId;
   final Position? position;
   final Site? site;
+  final bool? hasPassword; // Indicates if user has set a password
+  final bool? needsPasswordChange; // Indicates if user is still using default password
 
   User({
     required this.id,
@@ -27,6 +29,8 @@ class User {
     this.siteId,
     this.position,
     this.site,
+    this.hasPassword,
+    this.needsPasswordChange,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -51,6 +55,8 @@ class User {
       siteId: json['siteId'] as String?,
       position: json['position'] != null ? Position.fromJson(json['position']) : null,
       site: json['site'] != null ? Site.fromJson(json['site']) : null,
+      hasPassword: json['hasPassword'] as bool?,
+      needsPasswordChange: json['needsPasswordChange'] as bool?,
     );
   }
 
@@ -69,6 +75,8 @@ class User {
       'siteId': siteId,
       'position': position?.toJson(),
       'site': site?.toJson(),
+      'hasPassword': hasPassword,
+      'needsPasswordChange': needsPasswordChange,
     };
   }
 }

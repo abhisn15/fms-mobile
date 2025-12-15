@@ -12,7 +12,7 @@ import '../camera/camera_screen.dart';
 import '../profile/profile_screen.dart';
 import '../../widgets/animated_card.dart';
 import '../../widgets/shimmer_loading.dart';
-import '../../widgets/shift_selection_dialog.dart';
+import '../../widgets/password_setup_banner.dart';
 import '../../config/api_config.dart';
 import '../../utils/toast_helper.dart';
 import 'dart:io';
@@ -27,7 +27,6 @@ class HomeTab extends StatefulWidget {
 
 class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, WidgetsBindingObserver {
   Timer? _durationTimer;
-  DailyShift? _selectedShift; // Selected shift for check-in
   DateTime? _checkInDateTime; // Store parsed check-in datetime
   final ValueNotifier<String> _durationNotifier = ValueNotifier<String>('00 : 00 : 00');
 
@@ -380,46 +379,17 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   Future<void> _handleCheckIn() async {
     debugPrint('[HomeTab] Check-in button pressed');
     final shiftProvider = Provider.of<ShiftProvider>(context, listen: false);
-    final shifts = shiftProvider.shifts;
     final todayShift = shiftProvider.todayShift;
     
-    // Validasi: Shift harus dipilih terlebih dahulu
-    DailyShift? selectedShift = todayShift ?? _selectedShift;
+    // Gunakan shift yang di-assign hari ini jika ada, jika tidak, check-in tanpa shift
+    DailyShift? selectedShift = todayShift;
     
-    if (selectedShift == null) {
-      debugPrint('[HomeTab] ✗ No shift selected');
-      if (mounted) {
-        if (shifts.isEmpty) {
-          ToastHelper.showWarning(context, 'Tidak ada shift yang tersedia');
-        } else {
-          // Tampilkan dialog pilih shift
-          final chosenShift = await showDialog<DailyShift>(
-            context: context,
-            builder: (context) => ShiftSelectionDialog(
-              shifts: shifts,
-              selectedShift: null,
-              onShiftSelected: (shift) {
-                Navigator.of(context).pop(shift);
-              },
-            ),
-          );
-          
-          if (chosenShift == null) {
-            // User membatalkan pemilihan shift
-            return;
-          }
-          
-          selectedShift = chosenShift;
-          _selectedShift = chosenShift;
-        }
-      }
-      
-      if (selectedShift == null) {
-        return; // Tidak bisa check-in tanpa shift
-      }
+    if (selectedShift != null) {
+      debugPrint('[HomeTab] Using assigned shift: ${selectedShift.name} (${selectedShift.id})');
+    } else {
+      debugPrint('[HomeTab] No shift assigned, will check-in without shift');
     }
-
-    debugPrint('[HomeTab] Selected shift: ${selectedShift.name} (${selectedShift.id})');
+    
     debugPrint('[HomeTab] Opening camera for check-in selfie...');
 
     // Buka kamera untuk selfie (hanya kamera, tidak boleh galeri)
@@ -442,7 +412,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       try {
         final success = await attendanceProvider.checkIn(
           photo: photo,
-          shiftId: selectedShift.id,
+          shiftId: selectedShift?.id, // Opsional - bisa null jika tidak ada shift
         );
 
         if (mounted) {
@@ -980,7 +950,6 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     return Consumer<ShiftProvider>(
       builder: (context, shiftProvider, _) {
         final todayShift = shiftProvider.todayShift;
-        final shifts = shiftProvider.shifts;
         final hasAssignedShift = todayShift != null;
         
         if (hasAssignedShift) {
@@ -1045,106 +1014,29 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
               ],
             ),
           );
-        } else if (shifts.isNotEmpty) {
-          return InkWell(
-            onTap: () {
-              showDialog(
-                context: context,
-                builder: (context) => ShiftSelectionDialog(
-                  shifts: shifts,
-                  selectedShift: _selectedShift,
-                  onShiftSelected: (shift) {
-                    setState(() {
-                      _selectedShift = shift;
-                    });
-                  },
-                ),
-              );
-            },
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _selectedShift != null ? Colors.blue[50] : Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _selectedShift != null ? Colors.blue[300]! : Colors.grey[300]!,
-                  width: 1.5,
-                ),
-              ),
-              child: Row(
-                children: [
-                  if (_selectedShift != null) ...[
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: _selectedShift!.color != null
-                            ? Color(int.parse(
-                                'FF${_selectedShift!.color!.replaceAll('#', '')}',
-                                radix: 16))
-                            : Colors.blue,
-                        shape: BoxShape.circle,
-                      ),
-                      // Hanya warna, tanpa teks (menghilangkan nama shift di dalam lingkaran)
-                      child: null,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _selectedShift!.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                          Text(
-                            '${_selectedShift!.startTime} - ${_selectedShift!.endTime}',
-                            style: TextStyle(
-                              color: Colors.grey[700],
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ] else ...[
-                    Icon(Icons.access_time, color: Colors.grey[600], size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Pilih Shift',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                  Icon(Icons.arrow_drop_down, color: Colors.grey[600]),
-                ],
-              ),
-            ),
-          );
         } else {
+          // Tidak ada shift yang di-assign dan tidak ada shift template
+          // Tampilkan info bahwa absen bisa dilakukan tanpa shift
           return Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.orange[50],
+              color: Colors.blue[50],
               borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Colors.blue[200]!,
+                width: 1.5,
+              ),
             ),
             child: Row(
               children: [
-                Icon(Icons.warning, color: Colors.orange[700], size: 16),
+                Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Belum ada shift yang tersedia',
+                    'Anda dapat melakukan absen tanpa memilih shift',
                     style: TextStyle(
-                      color: Colors.orange[700],
-                      fontSize: 11,
+                      color: Colors.blue[900],
+                      fontSize: 12,
                     ),
                   ),
                 ),
@@ -1157,59 +1049,17 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   }
 
   Widget _buildShiftWarning(BuildContext context) {
-    return Consumer<ShiftProvider>(
-      builder: (context, shiftProvider, _) {
-        final shifts = shiftProvider.shifts;
-        final todayShift = shiftProvider.todayShift;
-        final hasAssignedShift = todayShift != null;
-        
-        // Hanya tampilkan warning jika shift belum dipilih
-        if (hasAssignedShift || _selectedShift != null || shifts.isEmpty) {
-          return const SizedBox.shrink();
-        }
-        
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.amber[50],
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: Colors.amber[300]!,
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.info_outline, color: Colors.amber[800], size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Silakan pilih shift terlebih dahulu sebelum melakukan check-in',
-                  style: TextStyle(
-                    color: Colors.amber[900],
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    // Warning dihapus karena absen bisa dilakukan tanpa shift
+    return const SizedBox.shrink();
   }
 
   Widget _buildCheckInButton(BuildContext context) {
     return Consumer<ShiftProvider>(
       builder: (context, shiftProvider, _) {
-        final todayShift = shiftProvider.todayShift;
-        final hasAssignedShift = todayShift != null;
-        final hasSelectedShift = hasAssignedShift || _selectedShift != null;
-        
         return Consumer<AttendanceProvider>(
           builder: (context, attendanceProvider, _) {
             final isLoading = attendanceProvider.isLoading;
-            final isDisabled = !hasSelectedShift || isLoading;
+            final isDisabled = isLoading; // Check-in selalu enabled (tidak perlu shift)
             
             if (isLoading) {
               return Container(
@@ -1720,6 +1570,20 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Password Setup Banner (jika user belum punya password atau masih pakai password default)
+              Consumer<AuthProvider>(
+                builder: (context, authProvider, _) {
+                  final user = authProvider.user;
+                  // User perlu ganti password jika:
+                  // 1. Belum punya password di database (hasPassword === false)
+                  // 2. Masih menggunakan password default (needsPasswordChange === true)
+                  final needsPasswordSetup = (user?.hasPassword == false) || (user?.needsPasswordChange == true);
+                  if (needsPasswordSetup) {
+                    return const PasswordSetupBanner();
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
               // Today's Attendance Card
               _buildTodaysAttendanceCard(context),
               // Error Banner (jika ada error dari provider)

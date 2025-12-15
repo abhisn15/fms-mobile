@@ -126,9 +126,9 @@ class AttendanceProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> checkIn({required File photo, required String shiftId}) async {
+  Future<bool> checkIn({required File photo, String? shiftId}) async {
     debugPrint('[AttendanceProvider] Check-in initiated');
-    debugPrint('[AttendanceProvider] Shift ID: $shiftId');
+    debugPrint('[AttendanceProvider] Shift ID: ${shiftId ?? "null (no shift)"}');
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -141,7 +141,7 @@ class AttendanceProvider with ChangeNotifier {
         try {
           final result = await _attendanceService.checkIn(
             photo: photo,
-            shiftId: shiftId,
+            shiftId: shiftId, // Opsional - bisa null
           );
 
           if (result['success'] == true) {

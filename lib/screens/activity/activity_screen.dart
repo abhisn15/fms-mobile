@@ -15,29 +15,12 @@ class ActivityScreen extends StatefulWidget {
 }
 
 class _ActivityScreenState extends State<ActivityScreen> {
-  // Default: bulan ini (tanggal 1 sampai hari ini)
-  late DateTime _startDate = _getDefaultStartDate();
-  late DateTime _endDate = _getDefaultEndDate();
   int _currentPage = 1;
   final int _itemsPerPage = 10;
-
-  static DateTime _getDefaultStartDate() {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, 1);
-  }
-
-  static DateTime _getDefaultEndDate() {
-    return DateTime.now();
-  }
 
   @override
   void initState() {
     super.initState();
-    // Set default ke bulan ini
-    final now = DateTime.now();
-    _startDate = DateTime(now.year, now.month, 1);
-    _endDate = now;
-    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<ActivityProvider>(context, listen: false).loadActivities();
     });
@@ -49,11 +32,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
       appBar: AppBar(
         title: const Text('Aktivitas Harian'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.date_range),
-            onPressed: () => _selectDateRange(context),
-            tooltip: 'Pilih Rentang Tanggal',
-          ),
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () async {
@@ -73,50 +51,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
       ),
       body: Column(
         children: [
-          // Date Range Filter Card
-          Container(
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue[200]!),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.calendar_today, color: Colors.blue[700], size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Rentang Tanggal',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${DateFormat('dd MMM yyyy', 'id_ID').format(_startDate)} - ${DateFormat('dd MMM yyyy', 'id_ID').format(_endDate)}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.blue[900],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.edit, color: Colors.blue[700], size: 20),
-                  onPressed: () => _selectDateRange(context),
-                  tooltip: 'Ubah Rentang Tanggal',
-                ),
-              ],
-            ),
-          ),
           // Activity List
           Expanded(
             child: Consumer<ActivityProvider>(
@@ -152,35 +86,13 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 final recent = activityProvider.recentActivities;
                 final today = activityProvider.todayActivity;
 
-                // Apply filters
-                List<DailyActivity> filteredRecent = recent.where((activity) {
-                  // Filter by date range
-                  final activityDate = DateTime.parse(activity.date);
-                  if (activityDate.isBefore(_startDate)) return false;
-                  if (activityDate.isAfter(_endDate.add(const Duration(days: 1)))) return false;
-                  
-                  // No sentiment filter anymore
-                  
-                  return true;
-                }).toList();
-                
-                // Filter today activity
-                DailyActivity? filteredToday;
-                if (today != null) {
-                  final todayDate = DateTime.parse(today.date);
-                  bool includeToday = true;
-                  if (todayDate.isBefore(_startDate)) includeToday = false;
-                  if (todayDate.isAfter(_endDate.add(const Duration(days: 1)))) includeToday = false;
-                  // No sentiment filter anymore
-                  if (includeToday) filteredToday = today;
-                }
-
+                // Tampilkan semua aktivitas tanpa filter tanggal
                 // Combine all activities for pagination
                 final allFilteredActivities = <DailyActivity>[];
-                if (filteredToday != null) {
-                  allFilteredActivities.add(filteredToday);
+                if (today != null) {
+                  allFilteredActivities.add(today);
                 }
-                allFilteredActivities.addAll(filteredRecent);
+                allFilteredActivities.addAll(recent);
 
                 // Calculate pagination
                 final totalItems = allFilteredActivities.length;
@@ -198,7 +110,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 
                 if (paginatedActivities.isNotEmpty) {
                   // Check if first item is today
-                  if (filteredToday != null && paginatedActivities.first.id == filteredToday.id) {
+                  if (today != null && paginatedActivities.first.id == today.id) {
                     paginatedToday = paginatedActivities.first;
                     paginatedRecent = paginatedActivities.skip(1).toList();
                   } else {
@@ -326,39 +238,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
     );
   }
 
-  Future<void> _selectDateRange(BuildContext context) async {
-    final DateTimeRange? picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
-      locale: const Locale('id', 'ID'),
-      helpText: 'Pilih Rentang Tanggal',
-      cancelText: 'Batal',
-      confirmText: 'Pilih',
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Theme.of(context).primaryColor,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Colors.black87,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null && picked != DateTimeRange(start: _startDate, end: _endDate)) {
-      setState(() {
-        _startDate = picked.start;
-        _endDate = picked.end;
-        _currentPage = 1; // Reset to first page
-      });
-    }
-  }
 
 
   Widget _buildActivityCard(BuildContext context, DailyActivity activity, {bool isToday = false}) {
@@ -601,30 +480,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
       ),
     );
   }
-
-  Widget _buildListSection(String title, List<String> items) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[700],
-            ),
-          ),
-          const SizedBox(height: 4),
-          ...items.map((item) => Padding(
-                padding: const EdgeInsets.only(left: 16, top: 4),
-                child: Text('• $item'),
-              )),
-        ],
-      ),
-    );
-  }
-
 
 }
 

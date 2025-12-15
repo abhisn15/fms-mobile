@@ -1,54 +1,14 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../config/api_config.dart';
-import '../models/user_model.dart';
 import 'api_service.dart';
+import '../utils/error_handler.dart';
 
 class ProfileService {
   final ApiService _apiService = ApiService();
 
-  Future<User> getProfile() async {
-    try {
-      final response = await _apiService.get(ApiConfig.profile);
-      if (response.statusCode == 200) {
-        return User.fromJson(response.data['data']);
-      }
-      throw Exception('Gagal memuat profil');
-    } catch (e) {
-      rethrow;
-    }
-  }
-
-  /// Update profile photo only (legacy method, kept for backward compatibility)
-  Future<Map<String, dynamic>> updateProfilePhoto(File photo) async {
-    try {
-      final formData = FormData.fromMap({
-        'photo': await MultipartFile.fromFile(photo.path),
-      });
-
-      final response = await _apiService.putFormData(
-        ApiConfig.profile,
-        formData,
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return {
-          'success': true,
-          'data': response.data['data'],
-          'message': response.data['message'] ?? 'Foto profil berhasil diupdate',
-        };
-      } else {
-        throw Exception(response.data['message'] ?? 'Gagal mengupdate foto profil');
-      }
-    } catch (e) {
-      return {
-        'success': false,
-        'message': e.toString().replaceAll('Exception: ', ''),
-      };
-    }
-  }
-
-  /// Update full profile with all fields
+  /// Update profile user
   Future<Map<String, dynamic>> updateProfile({
     required String name,
     required String email,
@@ -56,66 +16,118 @@ class ProfileService {
     String? team,
     String? avatarColor,
     File? photo,
+    String? newPassword, // Password baru (opsional)
   }) async {
+    debugPrint('[ProfileService] Updating profile...');
     try {
-      Map<String, dynamic> result;
-
-      // If photo is provided, use FormData
+      Response response;
+      
       if (photo != null) {
-        final formData = FormData.fromMap({
+        // Jika ada foto, gunakan FormData dengan PUT
+        final formDataMap = <String, dynamic>{
           'name': name,
           'email': email,
           'title': title,
           'team': team ?? '',
           'avatarColor': avatarColor ?? '#1d4ed8',
           'photo': await MultipartFile.fromFile(photo.path),
-        });
-
-        final response = await _apiService.putFormData(
+        };
+        
+        // Tambahkan password jika diisi
+        if (newPassword != null && newPassword.trim().isNotEmpty) {
+          formDataMap['newPassword'] = newPassword.trim();
+        }
+        
+        final formData = FormData.fromMap(formDataMap);
+        
+        response = await _apiService.putFormData(
           ApiConfig.profile,
           formData,
         );
-
-        if (response.statusCode == 200) {
-          result = {
-            'success': true,
-            'data': response.data['data'],
-            'message': response.data['message'] ?? 'Profile berhasil diperbarui',
-          };
-        } else {
-          throw Exception(response.data['message'] ?? 'Gagal memperbarui profile');
-        }
       } else {
-        // No photo, use JSON
-        final response = await _apiService.put(
-          ApiConfig.profile,
-          data: {
-            'name': name,
-            'email': email,
-            'title': title,
-            'team': team,
-            'avatarColor': avatarColor ?? '#1d4ed8',
-          },
-        );
-
-        if (response.statusCode == 200) {
-          result = {
-            'success': true,
-            'data': response.data['data'],
-            'message': response.data['message'] ?? 'Profile berhasil diperbarui',
-          };
-        } else {
-          throw Exception(response.data['message'] ?? 'Gagal memperbarui profile');
+        // Jika tidak ada foto, gunakan JSON dengan PUT
+        final data = <String, dynamic>{
+          'name': name,
+          'email': email,
+          'title': title,
+          'team': team,
+          'avatarColor': avatarColor ?? '#1d4ed8',
+        };
+        
+        // Tambahkan password jika diisi
+        if (newPassword != null && newPassword.trim().isNotEmpty) {
+          data['newPassword'] = newPassword.trim();
         }
+        
+        response = await _apiService.put(
+          ApiConfig.profile,
+          data: data,
+        );
       }
 
-      return result;
+      if (response.statusCode == 200) {
+        debugPrint('[ProfileService] ✓ Profile updated successfully');
+        return {
+          'success': true,
+          'data': response.data['data'],
+          'message': response.data['message'] ?? 'Profile berhasil diperbarui',
+        };
+      } else {
+        final errorMessage = response.data['message'] ?? 'Gagal memperbarui profile';
+        debugPrint('[ProfileService] ✗ Error ${response.statusCode}: $errorMessage');
+        throw DioException(
+          requestOptions: RequestOptions(path: ApiConfig.profile),
+          response: response,
+          type: DioExceptionType.badResponse,
+          error: errorMessage,
+        );
+      }
     } catch (e) {
+      final errorMsg = ErrorHandler.getErrorMessage(e);
+      debugPrint('[ProfileService] ✗ Exception: $e');
+      debugPrint('[ProfileService] User-friendly error: $errorMsg');
       return {
         'success': false,
-        'message': e.toString().replaceAll('Exception: ', ''),
+        'message': errorMsg,
+      };
+    }
+  }
+
+  /// Set password baru untuk user (tanpa perlu password lama)
+  Future<Map<String, dynamic>> setPassword(String newPassword) async {
+    debugPrint('[ProfileService] Setting new password...');
+    try {
+      final response = await _apiService.post(
+        ApiConfig.setPassword,
+        data: {
+          'newPassword': newPassword,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        debugPrint('[ProfileService] ✓ Password set successfully');
+        return {
+          'success': true,
+          'message': response.data['message'] ?? 'Password berhasil dibuat',
+        };
+      } else {
+        final errorMessage = response.data['message'] ?? 'Gagal membuat password';
+        debugPrint('[ProfileService] ✗ Error ${response.statusCode}: $errorMessage');
+        throw DioException(
+          requestOptions: RequestOptions(path: ApiConfig.setPassword),
+          response: response,
+          type: DioExceptionType.badResponse,
+          error: errorMessage,
+        );
+      }
+    } catch (e) {
+      final errorMsg = ErrorHandler.getErrorMessage(e);
+      debugPrint('[ProfileService] ✗ Exception: $e');
+      debugPrint('[ProfileService] User-friendly error: $errorMsg');
+      return {
+        'success': false,
+        'message': errorMsg,
       };
     }
   }
 }
-

@@ -83,12 +83,12 @@ class AttendanceService {
 
   Future<Map<String, dynamic>> checkIn({
     required File photo,
-    required String shiftId,
+    String? shiftId, // Opsional - jika tidak ada, gunakan shift yang di-assign atau absen tanpa shift
     double? latitude,
     double? longitude,
   }) async {
     debugPrint('[AttendanceService] Starting check-in...');
-    debugPrint('[AttendanceService] Shift ID: $shiftId');
+    debugPrint('[AttendanceService] Shift ID: ${shiftId ?? "null (no shift)"}');
     debugPrint('[AttendanceService] Photo path: ${photo.path}');
     try {
       // Ambil GPS jika belum ada
@@ -151,7 +151,7 @@ class AttendanceService {
 
       final formData = FormData.fromMap({
         'photo': await MultipartFile.fromFile(photo.path),
-        'shiftId': shiftId,
+        if (shiftId != null) 'shiftId': shiftId, // Opsional - hanya kirim jika ada
         if (latitude != null) 'latitude': latitude.toString(),
         if (longitude != null) 'longitude': longitude.toString(),
       });

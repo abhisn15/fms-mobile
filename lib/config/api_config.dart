@@ -45,6 +45,7 @@ class ApiConfig {
   static const String checkpointPhoto = '/api/ess/activity/checkpoint-photo';
   static const String requests = '/api/ess/requests';
   static const String profile = '/api/ess/profile';
+  static const String setPassword = '/api/ess/profile/set-password';
   
   // Helper methods
   static String getFullUrl(String endpoint) {

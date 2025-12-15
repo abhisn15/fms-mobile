@@ -15,66 +15,20 @@ class PatroliListScreen extends StatefulWidget {
 }
 
 class _PatroliListScreenState extends State<PatroliListScreen> {
-  // Default: bulan ini (tanggal 1 sampai hari ini)
-  late DateTime _startDate = _getDefaultStartDate();
-  late DateTime _endDate = _getDefaultEndDate();
+  // Default: hari ini saja
+  late DateTime _today = DateTime.now();
   int _currentPage = 1;
   final int _itemsPerPage = 10;
-
-  static DateTime _getDefaultStartDate() {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, 1);
-  }
-
-  static DateTime _getDefaultEndDate() {
-    return DateTime.now();
-  }
 
   @override
   void initState() {
     super.initState();
-    // Set default ke bulan ini
-    final now = DateTime.now();
-    _startDate = DateTime(now.year, now.month, 1);
-    _endDate = now;
+    // Set default ke hari ini
+    _today = DateTime.now();
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<ActivityProvider>(context, listen: false).loadActivities();
     });
-  }
-
-  Future<void> _selectDateRange(BuildContext context) async {
-    final DateTimeRange? picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
-      locale: const Locale('id', 'ID'),
-      helpText: 'Pilih Rentang Tanggal',
-      cancelText: 'Batal',
-      confirmText: 'Pilih',
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Theme.of(context).primaryColor,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Colors.black87,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null && picked != DateTimeRange(start: _startDate, end: _endDate)) {
-      setState(() {
-        _startDate = picked.start;
-        _endDate = picked.end;
-        _currentPage = 1; // Reset to first page
-      });
-    }
   }
 
   @override
@@ -83,11 +37,6 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
       appBar: AppBar(
         title: const Text('Laporan Patroli'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.date_range),
-            onPressed: () => _selectDateRange(context),
-            tooltip: 'Pilih Rentang Tanggal',
-          ),
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () {
@@ -107,50 +56,6 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
       ),
       body: Column(
         children: [
-          // Date Range Filter Card
-          Container(
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue[200]!),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.calendar_today, color: Colors.blue[700], size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Rentang Tanggal',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${DateFormat('dd MMM yyyy', 'id_ID').format(_startDate)} - ${DateFormat('dd MMM yyyy', 'id_ID').format(_endDate)}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.blue[900],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.edit, color: Colors.blue[700], size: 20),
-                  onPressed: () => _selectDateRange(context),
-                  tooltip: 'Ubah Rentang Tanggal',
-                ),
-              ],
-            ),
-          ),
           // Patroli List
           Expanded(
             child: Consumer<ActivityProvider>(
@@ -194,6 +99,10 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
                 // 1. Punya latitude/longitude (GPS)
                 // 2. Punya checkpoints
                 // 3. Notes mengandung "📍" (indikator patroli dari backend)
+                // 4. Hanya hari ini
+                final todayStart = DateTime(_today.year, _today.month, _today.day);
+                final todayEnd = todayStart.add(const Duration(days: 1));
+                
                 final patroliList = allActivities.where((activity) {
                   final hasGPS = activity.latitude != null && activity.longitude != null;
                   final hasCheckpoints = activity.checkpoints != null && activity.checkpoints!.isNotEmpty;
@@ -203,10 +112,10 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
                   
                   if (!isPatroli) return false;
                   
-                  // Filter by date range
+                  // Filter hanya hari ini
                   final activityDate = DateTime.parse(activity.date);
-                  if (activityDate.isBefore(_startDate)) return false;
-                  if (activityDate.isAfter(_endDate.add(const Duration(days: 1)))) return false;
+                  if (activityDate.isBefore(todayStart)) return false;
+                  if (activityDate.isAfter(todayEnd)) return false;
                   
                   return true;
                 }).toList();

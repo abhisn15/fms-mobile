@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:intl/intl.dart';
 import 'dart:io';
 import '../../providers/activity_provider.dart';
 import '../../screens/camera/camera_screen.dart';
@@ -24,7 +23,6 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
   List<File> _selectedPhotos = [];
   List<String> _existingPhotoUrls = []; // For edit mode
   bool _isLoadingActivity = false;
-  DateTime _selectedDate = DateTime.now(); // Date picker
 
   @override
   void initState() {
@@ -219,34 +217,6 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
                 }
                 return null;
               },
-            ),
-            const SizedBox(height: 16),
-            // Date Picker
-            InkWell(
-              onTap: () async {
-                final DateTime? picked = await showDatePicker(
-                  context: context,
-                  initialDate: _selectedDate,
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime.now(),
-                );
-                if (picked != null && picked != _selectedDate) {
-                  setState(() {
-                    _selectedDate = picked;
-                  });
-                }
-              },
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Tanggal Aktivitas *',
-                  border: OutlineInputBorder(),
-                  suffixIcon: Icon(Icons.calendar_today),
-                ),
-                child: Text(
-                  DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(_selectedDate),
-                  style: const TextStyle(fontSize: 16),
-                ),
-              ),
             ),
             const SizedBox(height: 16),
             // Photos Section

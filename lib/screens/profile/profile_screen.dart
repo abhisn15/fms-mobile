@@ -30,6 +30,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   late TextEditingController _emailController;
   late TextEditingController _titleController;
   late TextEditingController _teamController;
+  late TextEditingController _newPasswordController;
+  late TextEditingController _confirmPasswordController;
 
   // Animation controllers
   late AnimationController _fadeController;
@@ -83,6 +85,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     _emailController = TextEditingController();
     _titleController = TextEditingController();
     _teamController = TextEditingController();
+    _newPasswordController = TextEditingController();
+    _confirmPasswordController = TextEditingController();
 
     // Start in edit mode if requested
     if (widget.startInEditMode) {
@@ -111,6 +115,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     _emailController.dispose();
     _titleController.dispose();
     _teamController.dispose();
+    _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
     _fadeController.dispose();
     _slideController.dispose();
     super.dispose();
@@ -124,6 +130,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     _teamController.text = user.team ?? '';
     _selectedAvatarColor = user.avatarColor ?? '#1d4ed8';
     _photoPreview = user.photoUrl;
+    // Reset password fields
+    _newPasswordController.clear();
+    _confirmPasswordController.clear();
   }
 
   Future<void> _pickPhoto() async {
@@ -156,6 +165,65 @@ class _ProfileScreenState extends State<ProfileScreen>
       _isUpdating = true;
     });
 
+    // Validasi password jika diisi
+    final newPassword = _newPasswordController.text.trim();
+    final confirmPassword = _confirmPasswordController.text.trim();
+    
+    // Jika salah satu field password diisi, maka keduanya harus diisi dan cocok
+    if (newPassword.isNotEmpty || confirmPassword.isNotEmpty) {
+      if (newPassword.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password baru wajib diisi jika ingin mengganti password'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isUpdating = false;
+        });
+        return;
+      }
+      
+      if (confirmPassword.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Konfirmasi password wajib diisi'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isUpdating = false;
+        });
+        return;
+      }
+      
+      if (newPassword.length < 6) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password minimal 6 karakter'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isUpdating = false;
+        });
+        return;
+      }
+      
+      if (newPassword != confirmPassword) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Konfirmasi password tidak cocok'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isUpdating = false;
+        });
+        return;
+      }
+    }
+
     final result = await _profileService.updateProfile(
       name: _nameController.text.trim(),
       email: _emailController.text.trim(),
@@ -165,6 +233,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           : _teamController.text.trim(),
       avatarColor: _selectedAvatarColor,
       photo: _photoFile,
+      newPassword: newPassword.isNotEmpty ? newPassword : null, // Hanya kirim jika diisi
     );
 
     if (mounted) {
@@ -179,6 +248,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         setState(() {
           _isEditing = false;
           _photoFile = null;
+          _newPasswordController.clear();
+          _confirmPasswordController.clear();
         });
 
         if (mounted) {
@@ -235,6 +306,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       _isEditing = false;
       _photoFile = null;
       _photoPreview = user?.photoUrl;
+      _newPasswordController.clear();
+      _confirmPasswordController.clear();
     });
   }
 
@@ -637,6 +710,21 @@ class _ProfileScreenState extends State<ProfileScreen>
             label: 'Team (Opsional)',
             icon: Icons.group,
           ),
+          const SizedBox(height: 20),
+          // Password Fields
+          _buildPasswordField(
+            controller: _newPasswordController,
+            label: 'Password Baru (Opsional)',
+            icon: Icons.lock,
+            hintText: 'Kosongkan jika tidak ingin ganti password',
+          ),
+          const SizedBox(height: 20),
+          _buildPasswordField(
+            controller: _confirmPasswordController,
+            label: 'Konfirmasi Password Baru',
+            icon: Icons.lock_outline,
+            hintText: 'Kosongkan jika tidak ingin ganti password',
+          ),
           const SizedBox(height: 24),
           // Avatar Color Picker
           _buildAvatarColorPicker(),
@@ -707,6 +795,38 @@ class _ProfileScreenState extends State<ProfileScreen>
       validator: validator,
       decoration: InputDecoration(
         labelText: label,
+        prefixIcon: Icon(icon, color: Colors.blue[700]),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[300]!),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[300]!),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
+        ),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      ),
+    );
+  }
+
+  Widget _buildPasswordField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    String? hintText,
+  }) {
+    return TextFormField(
+      controller: controller,
+      obscureText: true,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hintText,
         prefixIcon: Icon(icon, color: Colors.blue[700]),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
