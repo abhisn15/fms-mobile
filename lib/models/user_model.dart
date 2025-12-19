@@ -8,6 +8,14 @@ class User {
   final String? avatarColor;
   final String? photoUrl;
   final String externalId;
+  final String? phone;
+  final String? bpjsKesehatan;
+  final String? bpjsKetenagakerjaan;
+  final String? tempatLahir;
+  final String? tanggalLahir;
+  final String? namaRekening;
+  final String? noRekening;
+  final String? pemilikRekening;
   final String? positionId;
   final String? siteId;
   final Position? position;
@@ -25,6 +33,14 @@ class User {
     this.avatarColor,
     this.photoUrl,
     required this.externalId,
+    this.phone,
+    this.bpjsKesehatan,
+    this.bpjsKetenagakerjaan,
+    this.tempatLahir,
+    this.tanggalLahir,
+    this.namaRekening,
+    this.noRekening,
+    this.pemilikRekening,
     this.positionId,
     this.siteId,
     this.position,
@@ -51,6 +67,14 @@ class User {
       avatarColor: json['avatarColor'] as String?,
       photoUrl: json['photoUrl'] as String?,
       externalId: json['externalId'] as String? ?? '',
+      phone: json['phone'] as String?,
+      bpjsKesehatan: json['bpjsKesehatan'] as String?,
+      bpjsKetenagakerjaan: json['bpjsKetenagakerjaan'] as String?,
+      tempatLahir: json['tempatLahir'] as String?,
+      tanggalLahir: json['tanggalLahir'] as String?,
+      namaRekening: json['namaRekening'] as String?,
+      noRekening: json['noRekening'] as String?,
+      pemilikRekening: json['pemilikRekening'] as String?,
       positionId: json['positionId'] as String?,
       siteId: json['siteId'] as String?,
       position: json['position'] != null ? Position.fromJson(json['position']) : null,
@@ -71,6 +95,14 @@ class User {
       'avatarColor': avatarColor,
       'photoUrl': photoUrl,
       'externalId': externalId,
+      'phone': phone,
+      'bpjsKesehatan': bpjsKesehatan,
+      'bpjsKetenagakerjaan': bpjsKetenagakerjaan,
+      'tempatLahir': tempatLahir,
+      'tanggalLahir': tanggalLahir,
+      'namaRekening': namaRekening,
+      'noRekening': noRekening,
+      'pemilikRekening': pemilikRekening,
       'positionId': positionId,
       'siteId': siteId,
       'position': position?.toJson(),

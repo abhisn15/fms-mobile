@@ -9,7 +9,20 @@ class RequestService {
     try {
       final response = await _apiService.get(ApiConfig.requests);
       if (response.statusCode == 200) {
-        return RequestPayload.fromJson(response.data['data']);
+        final data = response.data['data'];
+        // Handle case where data might be null or have different structure
+        if (data == null) {
+          return RequestPayload(requests: []);
+        }
+        // Ensure data has 'requests' key, or if it's directly an array
+        if (data is Map<String, dynamic> && data.containsKey('requests')) {
+          return RequestPayload.fromJson(data);
+        } else if (data is List) {
+          // If data is directly an array
+          return RequestPayload(requests: data.map((e) => LeaveRequest.fromJson(e as Map<String, dynamic>)).toList());
+        } else {
+          return RequestPayload(requests: []);
+        }
       }
       throw Exception('Gagal memuat data request');
     } catch (e) {

@@ -149,8 +149,46 @@ class AttendanceService {
         debugPrint('[AttendanceService] Using provided GPS: $latitude, $longitude');
       }
 
+      // Validasi file sebelum upload untuk mencegah OOM di device low-end
+      try {
+        final fileStat = await photo.stat();
+        final fileSizeMB = fileStat.size / (1024 * 1024);
+        debugPrint('[AttendanceService] Photo size: ${fileSizeMB.toStringAsFixed(2)} MB');
+        
+        // Jika file terlalu besar (>10MB), bisa menyebabkan OOM di device low-end
+        if (fileSizeMB > 10) {
+          throw Exception('Foto terlalu besar (${fileSizeMB.toStringAsFixed(2)} MB). Maksimal 10 MB.');
+        }
+      } catch (e) {
+        if (e.toString().contains('terlalu besar')) {
+          rethrow;
+        }
+        debugPrint('[AttendanceService] ⚠ Could not check file size: $e');
+        // Continue anyway if we can't check size
+      }
+
+      // Buat MultipartFile dengan error handling untuk mencegah OOM
+      MultipartFile? photoFile;
+      try {
+        photoFile = await MultipartFile.fromFile(
+          photo.path,
+        ).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw Exception('Timeout saat membaca file foto. File mungkin terlalu besar.');
+          },
+        );
+      } catch (e) {
+        if (e.toString().contains('OutOfMemory') || 
+            e.toString().contains('out of memory') ||
+            e.toString().contains('Memory')) {
+          throw Exception('Memori tidak cukup untuk memproses foto. Coba ambil foto dengan resolusi lebih kecil.');
+        }
+        rethrow;
+      }
+
       final formData = FormData.fromMap({
-        'photo': await MultipartFile.fromFile(photo.path),
+        'photo': photoFile,
         if (shiftId != null) 'shiftId': shiftId, // Opsional - hanya kirim jika ada
         if (latitude != null) 'latitude': latitude.toString(),
         if (longitude != null) 'longitude': longitude.toString(),
@@ -160,6 +198,11 @@ class AttendanceService {
       final response = await _apiService.postFormData(
         ApiConfig.checkIn,
         formData,
+      ).timeout(
+        const Duration(seconds: 60), // Timeout 60 detik untuk upload
+        onTimeout: () {
+          throw Exception('Upload timeout. Koneksi mungkin lambat atau file terlalu besar.');
+        },
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -269,8 +312,46 @@ class AttendanceService {
         debugPrint('[AttendanceService] Using provided GPS: $latitude, $longitude');
       }
 
+      // Validasi file sebelum upload untuk mencegah OOM di device low-end
+      try {
+        final fileStat = await photo.stat();
+        final fileSizeMB = fileStat.size / (1024 * 1024);
+        debugPrint('[AttendanceService] Photo size: ${fileSizeMB.toStringAsFixed(2)} MB');
+        
+        // Jika file terlalu besar (>10MB), bisa menyebabkan OOM di device low-end
+        if (fileSizeMB > 10) {
+          throw Exception('Foto terlalu besar (${fileSizeMB.toStringAsFixed(2)} MB). Maksimal 10 MB.');
+        }
+      } catch (e) {
+        if (e.toString().contains('terlalu besar')) {
+          rethrow;
+        }
+        debugPrint('[AttendanceService] ⚠ Could not check file size: $e');
+        // Continue anyway if we can't check size
+      }
+
+      // Buat MultipartFile dengan error handling untuk mencegah OOM
+      MultipartFile? photoFile;
+      try {
+        photoFile = await MultipartFile.fromFile(
+          photo.path,
+        ).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw Exception('Timeout saat membaca file foto. File mungkin terlalu besar.');
+          },
+        );
+      } catch (e) {
+        if (e.toString().contains('OutOfMemory') || 
+            e.toString().contains('out of memory') ||
+            e.toString().contains('Memory')) {
+          throw Exception('Memori tidak cukup untuk memproses foto. Coba ambil foto dengan resolusi lebih kecil.');
+        }
+        rethrow;
+      }
+
       final formData = FormData.fromMap({
-        'photo': await MultipartFile.fromFile(photo.path),
+        'photo': photoFile,
         if (latitude != null) 'latitude': latitude.toString(),
         if (longitude != null) 'longitude': longitude.toString(),
       });
@@ -279,6 +360,11 @@ class AttendanceService {
       final response = await _apiService.postFormData(
         ApiConfig.checkOut,
         formData,
+      ).timeout(
+        const Duration(seconds: 60), // Timeout 60 detik untuk upload
+        onTimeout: () {
+          throw Exception('Upload timeout. Koneksi mungkin lambat atau file terlalu besar.');
+        },
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {

@@ -30,6 +30,15 @@ class _ProfileScreenState extends State<ProfileScreen>
   late TextEditingController _emailController;
   late TextEditingController _titleController;
   late TextEditingController _teamController;
+  late TextEditingController _nikController;
+  late TextEditingController _phoneController;
+  late TextEditingController _bpjsKesController;
+  late TextEditingController _bpjsKetController;
+  late TextEditingController _tempatLahirController;
+  late TextEditingController _tanggalLahirController;
+  late TextEditingController _namaRekeningController;
+  late TextEditingController _noRekeningController;
+  late TextEditingController _pemilikRekeningController;
   late TextEditingController _newPasswordController;
   late TextEditingController _confirmPasswordController;
 
@@ -85,6 +94,15 @@ class _ProfileScreenState extends State<ProfileScreen>
     _emailController = TextEditingController();
     _titleController = TextEditingController();
     _teamController = TextEditingController();
+    _nikController = TextEditingController();
+    _phoneController = TextEditingController();
+    _bpjsKesController = TextEditingController();
+    _bpjsKetController = TextEditingController();
+    _tempatLahirController = TextEditingController();
+    _tanggalLahirController = TextEditingController();
+    _namaRekeningController = TextEditingController();
+    _noRekeningController = TextEditingController();
+    _pemilikRekeningController = TextEditingController();
     _newPasswordController = TextEditingController();
     _confirmPasswordController = TextEditingController();
 
@@ -117,6 +135,15 @@ class _ProfileScreenState extends State<ProfileScreen>
     _teamController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
+    _nikController.dispose();
+    _phoneController.dispose();
+    _bpjsKesController.dispose();
+    _bpjsKetController.dispose();
+    _tempatLahirController.dispose();
+    _tanggalLahirController.dispose();
+    _namaRekeningController.dispose();
+    _noRekeningController.dispose();
+    _pemilikRekeningController.dispose();
     _fadeController.dispose();
     _slideController.dispose();
     super.dispose();
@@ -130,6 +157,15 @@ class _ProfileScreenState extends State<ProfileScreen>
     _teamController.text = user.team ?? '';
     _selectedAvatarColor = user.avatarColor ?? '#1d4ed8';
     _photoPreview = user.photoUrl;
+    _nikController.text = user.externalId;
+    _phoneController.text = user.phone ?? '';
+    _bpjsKesController.text = user.bpjsKesehatan ?? '';
+    _bpjsKetController.text = user.bpjsKetenagakerjaan ?? '';
+    _tempatLahirController.text = user.tempatLahir ?? '';
+    _tanggalLahirController.text = user.tanggalLahir ?? '';
+    _namaRekeningController.text = user.namaRekening ?? '';
+    _noRekeningController.text = user.noRekening ?? '';
+    _pemilikRekeningController.text = user.pemilikRekening ?? '';
     // Reset password fields
     _newPasswordController.clear();
     _confirmPasswordController.clear();
@@ -234,6 +270,15 @@ class _ProfileScreenState extends State<ProfileScreen>
       avatarColor: _selectedAvatarColor,
       photo: _photoFile,
       newPassword: newPassword.isNotEmpty ? newPassword : null, // Hanya kirim jika diisi
+      externalId: _nikController.text.trim().isEmpty ? null : _nikController.text.trim(),
+      phone: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
+      bpjsKesehatan: _bpjsKesController.text.trim().isEmpty ? null : _bpjsKesController.text.trim(),
+      bpjsKetenagakerjaan: _bpjsKetController.text.trim().isEmpty ? null : _bpjsKetController.text.trim(),
+      tempatLahir: _tempatLahirController.text.trim().isEmpty ? null : _tempatLahirController.text.trim(),
+      tanggalLahir: _tanggalLahirController.text.trim().isEmpty ? null : _tanggalLahirController.text.trim(),
+      namaRekening: _namaRekeningController.text.trim().isEmpty ? null : _namaRekeningController.text.trim(),
+      noRekening: _noRekeningController.text.trim().isEmpty ? null : _noRekeningController.text.trim(),
+      pemilikRekening: _pemilikRekeningController.text.trim().isEmpty ? null : _pemilikRekeningController.text.trim(),
     );
 
     if (mounted) {
@@ -471,6 +516,10 @@ class _ProfileScreenState extends State<ProfileScreen>
             Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
+                border: Border.all(
+                  color: _getColorFromHex(_selectedAvatarColor ?? user.avatarColor ?? '#1d4ed8'),
+                  width: 4,
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.1),
@@ -702,6 +751,97 @@ class _ProfileScreenState extends State<ProfileScreen>
               }
               return null;
             },
+          ),
+          const SizedBox(height: 20),
+          // NIK KTP (External ID)
+          _buildTextField(
+            controller: _nikController,
+            label: 'NIK KTP',
+            icon: Icons.badge,
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'NIK wajib diisi';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 20),
+          // Phone
+          _buildTextField(
+            controller: _phoneController,
+            label: 'No. HP',
+            icon: Icons.phone,
+            keyboardType: TextInputType.phone,
+          ),
+          const SizedBox(height: 20),
+          // BPJS Kesehatan
+          _buildTextField(
+            controller: _bpjsKesController,
+            label: 'BPJS Kesehatan',
+            icon: Icons.health_and_safety,
+          ),
+          const SizedBox(height: 20),
+          // BPJS Ketenagakerjaan
+          _buildTextField(
+            controller: _bpjsKetController,
+            label: 'BPJS Ketenagakerjaan',
+            icon: Icons.health_and_safety_outlined,
+          ),
+          const SizedBox(height: 20),
+          // Tempat Lahir
+          _buildTextField(
+            controller: _tempatLahirController,
+            label: 'Tempat Lahir',
+            icon: Icons.location_city,
+          ),
+          const SizedBox(height: 20),
+          // Tanggal Lahir
+          GestureDetector(
+            onTap: () async {
+              final now = DateTime.now();
+              final initial = (_tanggalLahirController.text.isNotEmpty)
+                  ? DateTime.tryParse(_tanggalLahirController.text) ?? now
+                  : now;
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: initial,
+                firstDate: DateTime(1950),
+                lastDate: DateTime(now.year + 1),
+              );
+              if (picked != null) {
+                _tanggalLahirController.text = picked.toIso8601String().split('T').first;
+                setState(() {});
+              }
+            },
+            child: AbsorbPointer(
+              child: _buildTextField(
+                controller: _tanggalLahirController,
+                label: 'Tanggal Lahir',
+                icon: Icons.calendar_today,
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          // Nama Rekening
+          _buildTextField(
+            controller: _namaRekeningController,
+            label: 'Nama Rekening',
+            icon: Icons.account_box,
+          ),
+          const SizedBox(height: 20),
+          // Nomor Rekening
+          _buildTextField(
+            controller: _noRekeningController,
+            label: 'Nomor Rekening',
+            icon: Icons.numbers,
+            keyboardType: TextInputType.number,
+          ),
+          const SizedBox(height: 20),
+          // Pemilik Rekening
+          _buildTextField(
+            controller: _pemilikRekeningController,
+            label: 'Pemilik Rekening',
+            icon: Icons.person_pin_circle,
           ),
           const SizedBox(height: 20),
           // Team Field

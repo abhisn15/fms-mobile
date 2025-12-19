@@ -113,6 +113,7 @@ class _RequestsScreenState extends State<RequestsScreen> {
       case 'cuti':
         return 'Cuti';
       case 'sakit':
+      case 'sick': // Handle both "sakit" and "sick" for compatibility
         return 'Sakit';
       default:
         return type;
@@ -376,8 +377,8 @@ class _RequestsScreenState extends State<RequestsScreen> {
                               )).toList(),
                         ),
                       ),
-                      // Pagination
-                      if (totalPages > 1)
+                      // Pagination (always show if more than itemsPerPage)
+                      if (totalItems > _itemsPerPage)
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -388,7 +389,7 @@ class _RequestsScreenState extends State<RequestsScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'Halaman $_currentPage dari $totalPages',
+                                'Menampilkan ${startIndex + 1}-${endIndex.clamp(0, totalItems)} dari $totalItems',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey[600],

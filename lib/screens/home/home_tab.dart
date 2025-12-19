@@ -8,11 +8,13 @@ import '../../providers/auth_provider.dart';
 import '../../providers/connectivity_provider.dart';
 import '../../models/shift_model.dart';
 import '../../models/attendance_model.dart';
+import '../../models/request_model.dart';
 import '../camera/camera_screen.dart';
 import '../profile/profile_screen.dart';
 import '../../widgets/animated_card.dart';
 import '../../widgets/shimmer_loading.dart';
 import '../../widgets/password_setup_banner.dart';
+import '../../widgets/leave_request_banner.dart';
 import '../../config/api_config.dart';
 import '../../utils/toast_helper.dart';
 import 'dart:io';
@@ -378,6 +380,62 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
 
   Future<void> _handleCheckIn() async {
     debugPrint('[HomeTab] Check-in button pressed');
+    
+    // Check if user has active leave request
+    final requestProvider = Provider.of<RequestProvider>(context, listen: false);
+    final requests = requestProvider.requests;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    // Find active leave request (status: approved atau berlangsung) that includes today
+    LeaveRequest? activeRequest;
+    for (final request in requests) {
+      final status = request.status.toLowerCase();
+      // Cek status approved atau berlangsung
+      if (status == 'approved' || status == 'berlangsung') {
+        try {
+          final startDate = DateTime.parse(request.startDate);
+          final endDate = DateTime.parse(request.endDate);
+          final start = DateTime(startDate.year, startDate.month, startDate.day);
+          final end = DateTime(endDate.year, endDate.month, endDate.day);
+          
+          // Check if today is within the leave request date range
+          if (today.isAfter(start.subtract(const Duration(days: 1))) && 
+              today.isBefore(end.add(const Duration(days: 1)))) {
+            activeRequest = request;
+            break;
+          }
+        } catch (e) {
+          // Skip invalid date formats
+          continue;
+        }
+      }
+    }
+    
+    if (activeRequest != null) {
+      String getTypeLabel(String type) {
+        switch (type.toLowerCase()) {
+          case 'izin':
+            return 'Izin';
+          case 'cuti':
+            return 'Cuti';
+          case 'sakit':
+          case 'sick': // Handle both "sakit" and "sick" for compatibility
+            return 'Sakit';
+          default:
+            return type;
+        }
+      }
+      
+      if (mounted) {
+        ToastHelper.showWarning(
+          context,
+          'Anda sedang dalam ${getTypeLabel(activeRequest.type).toLowerCase()} yang berlangsung. Tidak dapat melakukan check-in saat ini.',
+        );
+      }
+      return;
+    }
+    
     final shiftProvider = Provider.of<ShiftProvider>(context, listen: false);
     final todayShift = shiftProvider.todayShift;
     
@@ -418,14 +476,9 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
         if (mounted) {
           debugPrint('[HomeTab] Check-in result: $success');
           if (success) {
-            // Refresh attendance data untuk memastikan data terbaru
-            final now = DateTime.now();
-            final startDate = DateTime(now.year, now.month, 1);
-            await attendanceProvider.loadAttendance(
-              startDate: startDate,
-              endDate: now,
-              forceRefresh: true,
-            );
+            // loadAttendance sudah dipanggil di checkIn() method, tidak perlu dipanggil lagi
+            // Tunggu sebentar untuk memastikan loading state sudah di-reset
+            await Future.delayed(const Duration(milliseconds: 100));
             
             if (mounted) {
               ToastHelper.showSuccess(context, 'Check-in berhasil!');
@@ -479,14 +532,9 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
         if (mounted) {
           debugPrint('[HomeTab] Check-out result: $success');
           if (success) {
-            // Refresh attendance data untuk memastikan data terbaru
-            final now = DateTime.now();
-            final startDate = DateTime(now.year, now.month, 1);
-            await attendanceProvider.loadAttendance(
-              startDate: startDate,
-              endDate: now,
-              forceRefresh: true,
-            );
+            // loadAttendance sudah dipanggil di checkOut() method, tidak perlu dipanggil lagi
+            // Tunggu sebentar untuk memastikan loading state sudah di-reset
+            await Future.delayed(const Duration(milliseconds: 100));
             
             if (mounted) {
               ToastHelper.showSuccess(context, 'Check-out berhasil!');
@@ -1584,6 +1632,8 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                   return const SizedBox.shrink();
                 },
               ),
+              // Leave Request Banner (jika ada izin yang berlangsung)
+              const LeaveRequestBanner(),
               // Today's Attendance Card
               _buildTodaysAttendanceCard(context),
               // Error Banner (jika ada error dari provider)

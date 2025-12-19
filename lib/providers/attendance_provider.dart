@@ -146,7 +146,17 @@ class AttendanceProvider with ChangeNotifier {
 
           if (result['success'] == true) {
             debugPrint('[AttendanceProvider] ✓ Check-in successful, reloading attendance...');
-            await loadAttendance();
+            // Reset loading sebelum loadAttendance untuk menghindari loading state yang stuck
+            _isLoading = false;
+            notifyListeners();
+            // Load attendance dengan forceRefresh untuk mendapatkan data terbaru
+            final now = DateTime.now();
+            final startDate = DateTime(now.year, now.month, 1);
+            await loadAttendance(
+              startDate: startDate,
+              endDate: now,
+              forceRefresh: true,
+            );
             return true;
           } else {
             _error = result['message'] as String? ?? 'Check-in gagal';
@@ -154,15 +164,33 @@ class AttendanceProvider with ChangeNotifier {
             return false;
           }
         } catch (e) {
-          // If online check-in fails, save to pending
+          // Check if it's a memory-related error
+          final errorStr = e.toString().toLowerCase();
+          if (errorStr.contains('memory') || 
+              errorStr.contains('outofmemory') ||
+              errorStr.contains('terlalu besar') ||
+              errorStr.contains('timeout')) {
+            // Don't save to pending for memory/timeout errors - user needs to retry with smaller photo
+            _error = ErrorHandler.getErrorMessage(e);
+            debugPrint('[AttendanceProvider] ✗ Check-in failed due to memory/timeout: $_error');
+            return false;
+          }
+          
+          // If online check-in fails for other reasons, save to pending
           debugPrint('[AttendanceProvider] ⚠ Online check-in failed, saving to pending...');
-          await _offlineStorage.savePendingCheckIn({
-            'photo': photo.path,
-            'shiftId': shiftId,
-          });
-          _error = 'Check-in disimpan untuk sync nanti';
-          debugPrint('[AttendanceProvider] ✓ Check-in saved to pending');
-          return true;
+          try {
+            await _offlineStorage.savePendingCheckIn({
+              'photo': photo.path,
+              'shiftId': shiftId,
+            });
+            _error = 'Check-in disimpan untuk sync nanti';
+            debugPrint('[AttendanceProvider] ✓ Check-in saved to pending');
+            return true;
+          } catch (saveError) {
+            debugPrint('[AttendanceProvider] ✗ Failed to save to pending: $saveError');
+            _error = ErrorHandler.getErrorMessage(e);
+            return false;
+          }
         }
       } else {
         // Save to pending for offline mode
@@ -202,7 +230,17 @@ class AttendanceProvider with ChangeNotifier {
 
           if (result['success'] == true) {
             debugPrint('[AttendanceProvider] ✓ Check-out successful, reloading attendance...');
-            await loadAttendance();
+            // Reset loading sebelum loadAttendance untuk menghindari loading state yang stuck
+            _isLoading = false;
+            notifyListeners();
+            // Load attendance dengan forceRefresh untuk mendapatkan data terbaru
+            final now = DateTime.now();
+            final startDate = DateTime(now.year, now.month, 1);
+            await loadAttendance(
+              startDate: startDate,
+              endDate: now,
+              forceRefresh: true,
+            );
             return true;
           } else {
             _error = result['message'] as String? ?? 'Check-out gagal';
@@ -210,14 +248,32 @@ class AttendanceProvider with ChangeNotifier {
             return false;
           }
         } catch (e) {
-          // If online check-out fails, save to pending
+          // Check if it's a memory-related error
+          final errorStr = e.toString().toLowerCase();
+          if (errorStr.contains('memory') || 
+              errorStr.contains('outofmemory') ||
+              errorStr.contains('terlalu besar') ||
+              errorStr.contains('timeout')) {
+            // Don't save to pending for memory/timeout errors - user needs to retry with smaller photo
+            _error = ErrorHandler.getErrorMessage(e);
+            debugPrint('[AttendanceProvider] ✗ Check-out failed due to memory/timeout: $_error');
+            return false;
+          }
+          
+          // If online check-out fails for other reasons, save to pending
           debugPrint('[AttendanceProvider] ⚠ Online check-out failed, saving to pending...');
-          await _offlineStorage.savePendingCheckOut({
-            'photo': photo.path,
-          });
-          _error = 'Check-out disimpan untuk sync nanti';
-          debugPrint('[AttendanceProvider] ✓ Check-out saved to pending');
-          return true;
+          try {
+            await _offlineStorage.savePendingCheckOut({
+              'photo': photo.path,
+            });
+            _error = 'Check-out disimpan untuk sync nanti';
+            debugPrint('[AttendanceProvider] ✓ Check-out saved to pending');
+            return true;
+          } catch (saveError) {
+            debugPrint('[AttendanceProvider] ✗ Failed to save to pending: $saveError');
+            _error = ErrorHandler.getErrorMessage(e);
+            return false;
+          }
         }
       } else {
         // Save to pending for offline mode

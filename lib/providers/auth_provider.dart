@@ -91,6 +91,21 @@ class AuthProvider with ChangeNotifier {
         photoUrl: photoUrl,
         team: _user!.team,
         title: _user!.title,
+        phone: _user!.phone,
+        bpjsKesehatan: _user!.bpjsKesehatan,
+        bpjsKetenagakerjaan: _user!.bpjsKetenagakerjaan,
+        tempatLahir: _user!.tempatLahir,
+        tanggalLahir: _user!.tanggalLahir,
+        namaRekening: _user!.namaRekening,
+        noRekening: _user!.noRekening,
+        pemilikRekening: _user!.pemilikRekening,
+        avatarColor: _user!.avatarColor,
+        positionId: _user!.positionId,
+        siteId: _user!.siteId,
+        position: _user!.position,
+        site: _user!.site,
+        hasPassword: _user!.hasPassword,
+        needsPasswordChange: _user!.needsPasswordChange,
       );
       notifyListeners();
     }

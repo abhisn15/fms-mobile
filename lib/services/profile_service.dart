@@ -17,6 +17,15 @@ class ProfileService {
     String? avatarColor,
     File? photo,
     String? newPassword, // Password baru (opsional)
+    String? externalId,
+    String? phone,
+    String? bpjsKesehatan,
+    String? bpjsKetenagakerjaan,
+    String? tempatLahir,
+    String? tanggalLahir, // ISO string (yyyy-MM-dd)
+    String? namaRekening,
+    String? noRekening,
+    String? pemilikRekening,
   }) async {
     debugPrint('[ProfileService] Updating profile...');
     try {
@@ -31,6 +40,15 @@ class ProfileService {
           'team': team ?? '',
           'avatarColor': avatarColor ?? '#1d4ed8',
           'photo': await MultipartFile.fromFile(photo.path),
+          'externalId': externalId ?? '',
+          'phone': phone ?? '',
+          'bpjsKesehatan': bpjsKesehatan ?? '',
+          'bpjsKetenagakerjaan': bpjsKetenagakerjaan ?? '',
+          'tempatLahir': tempatLahir ?? '',
+          'tanggalLahir': tanggalLahir ?? '',
+          'namaRekening': namaRekening ?? '',
+          'noRekening': noRekening ?? '',
+          'pemilikRekening': pemilikRekening ?? '',
         };
         
         // Tambahkan password jika diisi
@@ -52,6 +70,15 @@ class ProfileService {
           'title': title,
           'team': team,
           'avatarColor': avatarColor ?? '#1d4ed8',
+          'externalId': externalId,
+          'phone': phone,
+          'bpjsKesehatan': bpjsKesehatan,
+          'bpjsKetenagakerjaan': bpjsKetenagakerjaan,
+          'tempatLahir': tempatLahir,
+          'tanggalLahir': tanggalLahir,
+          'namaRekening': namaRekening,
+          'noRekening': noRekening,
+          'pemilikRekening': pemilikRekening,
         };
         
         // Tambahkan password jika diisi

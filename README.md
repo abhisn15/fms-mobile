@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="assets/icon.png" alt="Atenim Logo" width="120" height="120">
+</div>
+
 # Atenim Mobile App - Employee Management System
 
 Aplikasi mobile Flutter untuk karyawan dengan semua fitur dari website employee, fokus pada absensi dan integrasi Google Cloud Storage untuk upload gambar.
@@ -124,11 +128,11 @@ Tambahkan keys:
 
 ```xml
 <key>NSCameraUsageDescription</key>
-<string>App needs camera access for check-in/check-out photos</string>
+<string>Aplikasi memerlukan akses kamera untuk mengambil foto absensi dan aktivitas</string>
 <key>NSLocationWhenInUseUsageDescription</key>
-<string>App needs location access for attendance tracking</string>
+<string>Aplikasi memerlukan akses lokasi untuk tracking absensi</string>
 <key>NSPhotoLibraryUsageDescription</key>
-<string>App needs photo library access to select photos</string>
+<string>Aplikasi memerlukan akses galeri foto untuk memilih foto</string>
 ```
 
 ### 4. Run App
@@ -265,6 +269,11 @@ Semua upload gambar (check-in, check-out, activity, patroli checkpoint, profile)
 - Cek koneksi internet
 - Pastikan backend Google Cloud Storage sudah dikonfigurasi dengan benar
 
+### Error: Force close di device low-end
+- Foto terlalu besar (>10MB) akan ditolak
+- Aplikasi akan menampilkan error message yang jelas
+- Coba ambil foto dengan resolusi lebih kecil
+
 ## Catatan Penting
 
 1. **Login hanya untuk karyawan**: Aplikasi ini hanya bisa digunakan oleh user dengan role `karyawan`. Admin dan supervisor tidak bisa login.
@@ -276,6 +285,8 @@ Semua upload gambar (check-in, check-out, activity, patroli checkpoint, profile)
 4. **Session management**: Menggunakan cookie-based authentication, session dikelola otomatis oleh backend.
 
 5. **Offline support**: Aplikasi belum support offline mode, pastikan koneksi internet tersedia.
+
+6. **Memory optimization**: Aplikasi sudah dioptimasi untuk device low-end dengan validasi ukuran file dan error handling yang baik.
 
 ## Development
 
@@ -293,6 +304,13 @@ Semua upload gambar (check-in, check-out, activity, patroli checkpoint, profile)
 2. Buat method di service yang sesuai
 3. Update provider untuk menggunakan method baru
 4. Update UI untuk menggunakan provider
+
+## Dokumentasi Tambahan
+
+- [Camera Fix Documentation](docs/CAMERA_FIX.md) - Dokumentasi perbaikan camera preview
+- [Release Notes](RELEASE_NOTES_v1.0.8.md) - Catatan rilis versi
+- [Security](SECURITY.md) - Informasi keamanan
+- [Play Store Upload Guide](PLAY_STORE_UPLOAD_GUIDE.md) - Panduan upload ke Play Store
 
 ## License
 

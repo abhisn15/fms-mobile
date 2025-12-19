@@ -7,7 +7,9 @@ class AttendanceRecord {
   final String? checkOut;
   final String? shiftId;
   final String? notes;
-  final String? photoUrl;
+  final String? photoUrl; // Deprecated: use checkInPhotoUrl and checkOutPhotoUrl instead
+  final String? checkInPhotoUrl;
+  final String? checkOutPhotoUrl;
   final Location? location; // Deprecated: use checkInLocation and checkOutLocation instead
   final Location? checkInLocation;
   final Location? checkOutLocation;
@@ -24,6 +26,8 @@ class AttendanceRecord {
     this.shiftId,
     this.notes,
     this.photoUrl,
+    this.checkInPhotoUrl,
+    this.checkOutPhotoUrl,
     this.location,
     this.checkInLocation,
     this.checkOutLocation,
@@ -41,7 +45,9 @@ class AttendanceRecord {
       checkOut: json['checkOut'] as String?,
       shiftId: json['shiftId'] as String?,
       notes: json['notes'] as String?,
-      photoUrl: json['photoUrl'] as String?,
+      photoUrl: json['photoUrl'] as String?, // Keep for backward compatibility
+      checkInPhotoUrl: json['checkInPhotoUrl'] as String?,
+      checkOutPhotoUrl: json['checkOutPhotoUrl'] as String?,
       location: json['location'] != null
           ? Location.fromJson(json['location'] as Map<String, dynamic>)
           : null, // Keep for backward compatibility
@@ -66,7 +72,9 @@ class AttendanceRecord {
       'checkOut': checkOut,
       'shiftId': shiftId,
       'notes': notes,
-      'photoUrl': photoUrl,
+      'photoUrl': photoUrl, // Keep for backward compatibility
+      'checkInPhotoUrl': checkInPhotoUrl,
+      'checkOutPhotoUrl': checkOutPhotoUrl,
       'location': location?.toJson(), // Keep for backward compatibility
       'checkInLocation': checkInLocation?.toJson(),
       'checkOutLocation': checkOutLocation?.toJson(),

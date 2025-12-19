@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/attendance_provider.dart';
+import '../../models/attendance_model.dart';
 
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key});
@@ -271,10 +273,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           ),
                           const SizedBox(height: 12),
                           _buildAttendanceRow('Tanggal', DateFormat('dd MMMM yyyy').format(DateTime.parse(today.date))),
-                          if (today.checkIn != null)
+                          if (today.checkIn != null) ...[
                             _buildAttendanceRow('Check-In', today.checkIn!),
-                          if (today.checkOut != null)
+                            if (_getCheckInPhotoUrl(today) != null)
+                              _buildPhotoThumbnail('Foto Check-In', _getCheckInPhotoUrl(today)!),
+                          ],
+                          if (today.checkOut != null) ...[
                             _buildAttendanceRow('Check-Out', today.checkOut!),
+                            if (_getCheckOutPhotoUrl(today) != null)
+                              _buildPhotoThumbnail('Foto Check-Out', _getCheckOutPhotoUrl(today)!),
+                          ],
                           const SizedBox(height: 8),
                           Chip(
                             label: Text(today.status.toUpperCase()),
@@ -300,7 +308,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   const SizedBox(height: 8),
                   ...filteredRecent.map((record) => Card(
                         margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
+                        child: ExpansionTile(
                           leading: CircleAvatar(
                             backgroundColor: _getStatusColor(record.status).withOpacity(0.2),
                             child: Icon(
@@ -323,6 +331,27 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (record.checkIn != null) ...[
+                                    _buildAttendanceRow('Check-In', record.checkIn!),
+                                    if (_getCheckInPhotoUrl(record) != null)
+                                      _buildPhotoThumbnail('Foto Check-In', _getCheckInPhotoUrl(record)!),
+                                    const SizedBox(height: 8),
+                                  ],
+                                  if (record.checkOut != null) ...[
+                                    _buildAttendanceRow('Check-Out', record.checkOut!),
+                                    if (_getCheckOutPhotoUrl(record) != null)
+                                      _buildPhotoThumbnail('Foto Check-Out', _getCheckOutPhotoUrl(record)!),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       )),
                 ],
@@ -360,6 +389,117 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  String? _getCheckInPhotoUrl(AttendanceRecord record) {
+    // Prioritize checkInPhotoUrl, fallback to photoUrl if checkOut is null
+    return record.checkInPhotoUrl ?? 
+           (record.checkIn != null && record.checkOut == null ? record.photoUrl : null);
+  }
+
+  String? _getCheckOutPhotoUrl(AttendanceRecord record) {
+    // Prioritize checkOutPhotoUrl, fallback to photoUrl if checkOut exists
+    return record.checkOutPhotoUrl ?? 
+           (record.checkOut != null ? record.photoUrl : null);
+  }
+
+  Widget _buildPhotoThumbnail(String label, String photoUrl) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.grey[700],
+              fontWeight: FontWeight.w500,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () => _showPhotoDialog(photoUrl, label),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: CachedNetworkImage(
+                imageUrl: photoUrl,
+                width: double.infinity,
+                height: 200,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(
+                  height: 200,
+                  color: Colors.grey[200],
+                  child: const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+                errorWidget: (context, url, error) => Container(
+                  height: 200,
+                  color: Colors.grey[200],
+                  child: const Icon(Icons.error, color: Colors.red),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPhotoDialog(String photoUrl, String title) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Stack(
+          children: [
+            Center(
+              child: CachedNetworkImage(
+                imageUrl: photoUrl,
+                fit: BoxFit.contain,
+                placeholder: (context, url) => const Center(
+                  child: CircularProgressIndicator(),
+                ),
+                errorWidget: (context, url, error) => const Icon(
+                  Icons.error,
+                  color: Colors.red,
+                  size: 48,
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.of(context).pop(),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.black54,
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 8,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                color: Colors.black54,
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

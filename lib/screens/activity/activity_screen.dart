@@ -15,15 +15,66 @@ class ActivityScreen extends StatefulWidget {
 }
 
 class _ActivityScreenState extends State<ActivityScreen> {
+  // Default: bulan ini (tanggal 1 sampai hari ini)
+  late DateTime _startDate = _getDefaultStartDate();
+  late DateTime _endDate = _getDefaultEndDate();
   int _currentPage = 1;
   final int _itemsPerPage = 10;
+
+  static DateTime _getDefaultStartDate() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, 1);
+  }
+
+  static DateTime _getDefaultEndDate() {
+    return DateTime.now();
+  }
 
   @override
   void initState() {
     super.initState();
+    // Set default ke bulan ini
+    final now = DateTime.now();
+    _startDate = DateTime(now.year, now.month, 1);
+    _endDate = now;
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<ActivityProvider>(context, listen: false).loadActivities();
     });
+  }
+
+  Future<void> _selectDateRange(BuildContext context) async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
+      locale: const Locale('id', 'ID'),
+      helpText: 'Pilih Rentang Tanggal',
+      cancelText: 'Batal',
+      confirmText: 'Pilih',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Theme.of(context).primaryColor,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black87,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && picked != DateTimeRange(start: _startDate, end: _endDate)) {
+      setState(() {
+        _startDate = picked.start;
+        _endDate = picked.end;
+        _currentPage = 1; // Reset to first page
+      });
+    }
   }
 
   @override
@@ -51,6 +102,50 @@ class _ActivityScreenState extends State<ActivityScreen> {
       ),
       body: Column(
         children: [
+          // Date Range Filter Card
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue[200]!),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.calendar_today, color: Colors.blue[700], size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Rentang Tanggal',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${DateFormat('dd MMM yyyy', 'id_ID').format(_startDate)} - ${DateFormat('dd MMM yyyy', 'id_ID').format(_endDate)}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue[900],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.edit, color: Colors.blue[700], size: 20),
+                  onPressed: () => _selectDateRange(context),
+                  tooltip: 'Ubah Rentang Tanggal',
+                ),
+              ],
+            ),
+          ),
           // Activity List
           Expanded(
             child: Consumer<ActivityProvider>(
@@ -86,23 +181,38 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 final recent = activityProvider.recentActivities;
                 final today = activityProvider.todayActivity;
 
-                // Tampilkan semua aktivitas tanpa filter tanggal
-                // Combine all activities for pagination
-                final allFilteredActivities = <DailyActivity>[];
+                // Filter aktivitas berdasarkan tanggal
+                final startDateOnly = DateTime(_startDate.year, _startDate.month, _startDate.day);
+                final endDateOnly = DateTime(_endDate.year, _endDate.month, _endDate.day).add(const Duration(days: 1));
+                
+                // Combine all activities first
+                final allActivities = <DailyActivity>[];
                 if (today != null) {
-                  allFilteredActivities.add(today);
+                  allActivities.add(today);
                 }
-                allFilteredActivities.addAll(recent);
+                allActivities.addAll(recent);
+                
+                // Filter by date range
+                final allFilteredActivities = allActivities.where((activity) {
+                  try {
+                    final activityDate = DateTime.parse(activity.date);
+                    final activityDateOnly = DateTime(activityDate.year, activityDate.month, activityDate.day);
+                    return activityDateOnly.isAfter(startDateOnly.subtract(const Duration(days: 1))) && 
+                           activityDateOnly.isBefore(endDateOnly);
+                  } catch (e) {
+                    return false;
+                  }
+                }).toList();
 
                 // Calculate pagination
                 final totalItems = allFilteredActivities.length;
-                final totalPages = (totalItems / _itemsPerPage).ceil();
+                final totalPages = totalItems > 0 ? (totalItems / _itemsPerPage).ceil() : 1;
                 final startIndex = (_currentPage - 1) * _itemsPerPage;
                 final endIndex = startIndex + _itemsPerPage;
-                final paginatedActivities = allFilteredActivities.sublist(
+                final paginatedActivities = totalItems > 0 ? allFilteredActivities.sublist(
                   startIndex.clamp(0, totalItems),
                   endIndex.clamp(0, totalItems),
-                );
+                ) : <DailyActivity>[];
 
                 // Separate today and recent for display
                 DailyActivity? paginatedToday;
@@ -178,8 +288,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
                           ],
                         ),
                       ),
-                      // Pagination
-                      if (totalPages > 1)
+                      // Pagination (always show if more than itemsPerPage)
+                      if (totalItems > _itemsPerPage)
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -190,7 +300,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'Halaman $_currentPage dari $totalPages',
+                                'Menampilkan ${startIndex + 1}-${endIndex.clamp(0, totalItems)} dari $totalItems',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey[600],

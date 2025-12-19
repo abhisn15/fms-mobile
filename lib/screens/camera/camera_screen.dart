@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class CameraScreen extends StatefulWidget {
   final String title;
@@ -25,12 +26,16 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _isFlashOn = false;
   final ImagePicker _imagePicker = ImagePicker();
   bool _isCameraReady = false;
+  bool _isDisposing = false;
+  bool _isInitializing = false;
+  bool _hasPermission = false;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initializeCamera();
+    _checkPermissionAndInitialize();
   }
 
   @override
@@ -42,47 +47,59 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_controller == null || !_controller!.value.isInitialized) {
+    // Prevent lifecycle operations if already disposing or not mounted
+    if (!mounted || _isDisposing) {
       return;
     }
 
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       _disposeCamera();
     } else if (state == AppLifecycleState.resumed) {
-      if (_controller == null || !_controller!.value.isInitialized) {
-        _initializeCamera();
+      // Only reinitialize if we had permission before
+      if (_hasPermission && (_controller == null || !_controller!.value.isInitialized)) {
+        _checkPermissionAndInitialize();
       }
     }
   }
 
-  Future<void> _initializeCamera() async {
-    try {
-      _cameras = await availableCameras();
-      if (_cameras != null && _cameras!.isNotEmpty) {
-        // Set kamera belakang sebagai default
-        _currentCameraIndex = _findBackCameraIndex();
-        
-        _controller = CameraController(
-          _cameras![_currentCameraIndex],
-          ResolutionPreset.high,
-          enableAudio: false,
-        );
+  Future<void> _checkPermissionAndInitialize() async {
+    if (_isInitializing || _isDisposing || !mounted) {
+      return;
+    }
 
-        await _controller!.initialize();
-        
-        // Set initial flash mode
-        await _controller!.setFlashMode(FlashMode.off);
-        
-        setState(() {
-          _isCameraReady = true;
-        });
+    try {
+      // Check camera permission first
+      final status = await Permission.camera.status;
+      
+      if (!status.isGranted) {
+        final result = await Permission.camera.request();
+        if (!result.isGranted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Izin kamera diperlukan untuk mengambil foto'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+            // Close screen if permission denied
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (mounted) {
+                Navigator.of(context).pop();
+              }
+            });
+          }
+          return;
+        }
       }
+
+      _hasPermission = true;
+      await _initializeCamera();
     } catch (e) {
-      debugPrint('Error initializing camera: $e');
+      debugPrint('Error checking permission: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Gagal mengakses kamera: $e'),
+            content: Text('Gagal memeriksa izin kamera: $e'),
             duration: const Duration(seconds: 3),
           ),
         );
@@ -90,45 +107,235 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
   }
 
-  int _findBackCameraIndex() {
+  Future<void> _initializeCamera() async {
+    if (_isInitializing || _isDisposing || !mounted) {
+      return;
+    }
+
+    _isInitializing = true;
+    _errorMessage = null;
+
+    if (mounted) {
+      setState(() {
+        _isCameraReady = false;
+        _errorMessage = null;
+      });
+    }
+
+    try {
+      // Dispose existing controller if any
+      if (_controller != null) {
+        try {
+          if (_controller!.value.isInitialized) {
+            await _controller!.dispose();
+          }
+        } catch (e) {
+          debugPrint('Error disposing old controller: $e');
+        }
+        _controller = null;
+      }
+
+      _cameras = await availableCameras();
+      
+      if (_cameras == null || _cameras!.isEmpty) {
+        throw Exception('Tidak ada kamera yang tersedia');
+      }
+
+      // Set kamera depan sebagai default untuk selfie
+      _currentCameraIndex = _findFrontCameraIndex();
+      
+      // Try different resolution presets for device compatibility
+      // Start with medium (better compatibility for older devices like Redmi 5A)
+      // Fallback to low if medium fails, then try high as last resort
+      final presets = [ResolutionPreset.medium, ResolutionPreset.low, ResolutionPreset.high];
+      Exception? lastError;
+      bool initialized = false;
+
+      for (final preset in presets) {
+        if (!mounted || _isDisposing) {
+          return;
+        }
+
+        try {
+          debugPrint('Trying to initialize camera with preset: $preset');
+          
+          _controller = CameraController(
+            _cameras![_currentCameraIndex],
+            preset,
+            enableAudio: false,
+          );
+
+          // Add timeout to prevent hanging
+          await _controller!.initialize().timeout(
+            const Duration(seconds: 15),
+            onTimeout: () {
+              throw Exception('Timeout saat menginisialisasi kamera dengan preset $preset');
+            },
+          );
+          
+          // Verify controller is still valid after initialization
+          if (!mounted || _isDisposing || _controller == null) {
+            await _disposeCamera();
+            return;
+          }
+
+          // Verify camera is actually ready
+          if (!_controller!.value.isInitialized) {
+            throw Exception('Kamera tidak terinisialisasi dengan benar');
+          }
+
+          initialized = true;
+          debugPrint('Camera initialized successfully with preset: $preset');
+          break;
+        } catch (e) {
+          debugPrint('Failed to initialize with preset $preset: $e');
+          lastError = e is Exception ? e : Exception(e.toString());
+          
+          // Dispose failed controller
+          try {
+            if (_controller != null) {
+              await _controller!.dispose();
+            }
+          } catch (disposeError) {
+            debugPrint('Error disposing failed controller: $disposeError');
+          }
+          _controller = null;
+          
+          // Wait a bit before trying next preset
+          await Future.delayed(const Duration(milliseconds: 300));
+        }
+      }
+
+      if (!initialized) {
+        throw lastError ?? Exception('Gagal menginisialisasi kamera dengan semua preset');
+      }
+      
+      // Set initial flash mode
+      try {
+        await _controller!.setFlashMode(FlashMode.off);
+      } catch (e) {
+        debugPrint('Error setting flash mode: $e');
+        // Continue even if flash fails
+      }
+      
+      if (mounted && !_isDisposing) {
+        setState(() {
+          _isCameraReady = true;
+          _errorMessage = null;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error initializing camera: $e');
+      final errorMsg = e.toString().replaceAll('Exception: ', '');
+      
+      if (mounted && !_isDisposing) {
+        setState(() {
+          _errorMessage = errorMsg;
+          _isCameraReady = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal mengakses kamera: $errorMsg'),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Coba Lagi',
+              textColor: Colors.white,
+              onPressed: () {
+                _initializeCamera();
+              },
+            ),
+          ),
+        );
+      }
+    } finally {
+      _isInitializing = false;
+    }
+  }
+
+  int _findFrontCameraIndex() {
     for (int i = 0; i < _cameras!.length; i++) {
-      if (_cameras![i].lensDirection == CameraLensDirection.back) {
+      if (_cameras![i].lensDirection == CameraLensDirection.front) {
         return i;
       }
     }
-    return 0;
+    return 0; // Fallback ke kamera pertama jika tidak ada depan
   }
 
   Future<void> _switchCamera() async {
-    if (_cameras == null || _cameras!.length < 2) return;
+    if (_cameras == null || _cameras!.length < 2 || _isInitializing || _isDisposing || !mounted) {
+      return;
+    }
+
+    if (_controller == null || !_controller!.value.isInitialized) {
+      return;
+    }
+
+    _isInitializing = true;
 
     try {
-      setState(() {
-        _isCameraReady = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isCameraReady = false;
+        });
+      }
 
-      await _controller?.dispose();
+      // Dispose current controller safely
+      final oldController = _controller;
+      _controller = null;
+      
+      try {
+        if (oldController != null && oldController.value.isInitialized) {
+          await oldController.dispose();
+        }
+      } catch (e) {
+        debugPrint('Error disposing old controller during switch: $e');
+      }
+      
+      // Wait a bit to ensure camera is released
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      if (!mounted || _isDisposing) {
+        return;
+      }
       
       _currentCameraIndex = (_currentCameraIndex + 1) % _cameras!.length;
       
+      // Try medium preset first for better compatibility
       _controller = CameraController(
         _cameras![_currentCameraIndex],
-        ResolutionPreset.high,
+        ResolutionPreset.medium,
         enableAudio: false,
       );
       
-      await _controller!.initialize();
+      await _controller!.initialize().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw Exception('Timeout saat mengganti kamera');
+        },
+      );
+      
+      if (!mounted || _isDisposing || _controller == null) {
+        await _disposeCamera();
+        return;
+      }
       
       // Reset flash saat ganti kamera
-      await _controller!.setFlashMode(FlashMode.off);
+      try {
+        await _controller!.setFlashMode(FlashMode.off);
+      } catch (e) {
+        debugPrint('Error setting flash mode after switch: $e');
+      }
       
-      setState(() {
-        _isCameraReady = true;
-        _isFlashOn = false;
-      });
+      if (mounted && !_isDisposing) {
+        setState(() {
+          _isCameraReady = true;
+          _isFlashOn = false;
+        });
+      }
     } catch (e) {
       debugPrint('Error switching camera: $e');
-      if (mounted) {
+      if (mounted && !_isDisposing) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Gagal mengganti kamera: $e'),
@@ -138,23 +345,35 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         // Coba inisialisasi ulang
         await _initializeCamera();
       }
+    } finally {
+      _isInitializing = false;
     }
   }
 
   Future<void> _toggleFlash() async {
-    if (_controller == null || !_controller!.value.isInitialized) return;
+    if (_controller == null || 
+        !_controller!.value.isInitialized || 
+        _isDisposing || 
+        _isInitializing ||
+        !mounted) {
+      return;
+    }
     
     try {
       if (_isFlashOn) {
         await _controller!.setFlashMode(FlashMode.off);
-        setState(() => _isFlashOn = false);
+        if (mounted && !_isDisposing) {
+          setState(() => _isFlashOn = false);
+        }
       } else {
         await _controller!.setFlashMode(FlashMode.torch);
-        setState(() => _isFlashOn = true);
+        if (mounted && !_isDisposing) {
+          setState(() => _isFlashOn = true);
+        }
       }
     } catch (e) {
       debugPrint('Error toggling flash: $e');
-      if (mounted) {
+      if (mounted && !_isDisposing) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Flash tidak tersedia: $e'),
@@ -166,29 +385,52 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _capturePhoto() async {
-    if (_controller == null || !_controller!.value.isInitialized || _isCapturing) {
+    if (_controller == null || 
+        !_controller!.value.isInitialized || 
+        _isCapturing || 
+        _isDisposing ||
+        _isInitializing ||
+        !mounted) {
       return;
     }
 
-    setState(() => _isCapturing = true);
+    if (mounted) {
+      setState(() => _isCapturing = true);
+    }
 
     try {
-      final image = await _controller!.takePicture();
+      // Add timeout to prevent hanging
+      final image = await _controller!.takePicture().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw Exception('Timeout saat mengambil foto');
+        },
+      );
+      
+      if (!mounted || _isDisposing) {
+        return;
+      }
+
       final file = File(image.path);
+      
+      // Verify file exists
+      if (!await file.exists()) {
+        throw Exception('File foto tidak ditemukan');
+      }
       
       // Dispose camera sebelum pop untuk menghindari layar blank
       await _disposeCamera();
       
       if (mounted) {
         // Pop dengan delay kecil untuk memastikan camera sudah di-dispose
-        await Future.delayed(const Duration(milliseconds: 100));
+        await Future.delayed(const Duration(milliseconds: 200));
         if (mounted) {
           Navigator.of(context).pop(file);
         }
       }
     } catch (e) {
       debugPrint('Error capturing photo: $e');
-      if (mounted) {
+      if (mounted && !_isDisposing) {
         setState(() => _isCapturing = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -201,14 +443,32 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _pickFromGallery() async {
+    if (_isDisposing || !mounted) {
+      return;
+    }
+
     try {
-      final image = await _imagePicker.pickImage(source: ImageSource.gallery);
-      if (image != null && mounted) {
-        Navigator.of(context).pop(File(image.path));
+      // Dispose camera before opening gallery to free resources
+      await _disposeCamera();
+      
+      final image = await _imagePicker.pickImage(source: ImageSource.gallery).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Timeout saat memilih foto dari galeri');
+        },
+      );
+      
+      if (image != null && mounted && !_isDisposing) {
+        final file = File(image.path);
+        if (await file.exists()) {
+          Navigator.of(context).pop(file);
+        } else {
+          throw Exception('File foto tidak ditemukan');
+        }
       }
     } catch (e) {
       debugPrint('Error picking image: $e');
-      if (mounted) {
+      if (mounted && !_isDisposing) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Gagal memilih foto: $e'),
@@ -220,58 +480,221 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _disposeCamera() async {
-    if (_controller != null) {
-      try {
-        if (_controller!.value.isInitialized) {
-          await _controller!.dispose();
+    if (_isDisposing) {
+      return;
+    }
+
+    _isDisposing = true;
+    _isInitializing = false;
+
+    try {
+      final controller = _controller;
+      _controller = null;
+
+      if (controller != null) {
+        try {
+          if (controller.value.isInitialized) {
+            await controller.dispose().timeout(
+              const Duration(seconds: 5),
+              onTimeout: () {
+                debugPrint('Timeout disposing camera controller');
+              },
+            );
+          }
+        } catch (e) {
+          debugPrint('Error disposing camera: $e');
+          // Try to dispose anyway
+          try {
+            await controller.dispose();
+          } catch (e2) {
+            debugPrint('Error force disposing camera: $e2');
+          }
         }
-      } catch (e) {
-        debugPrint('Error disposing camera: $e');
+      }
+    } catch (e) {
+      debugPrint('Error in disposeCamera: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCameraReady = false;
+        });
       }
     }
-    _controller = null;
-    if (mounted) {
-      setState(() {
-        _isCameraReady = false;
-      });
+  }
+
+  // Helper method untuk mendapatkan ukuran responsive
+  double _getResponsiveSize(BuildContext context, double baseSize) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final textScale = MediaQuery.of(context).textScaleFactor;
+    
+    // Adjust untuk device kecil (lebar < 360)
+    if (screenWidth < 360) {
+      return baseSize * 0.85;
     }
+    
+    // Adjust untuk text scale yang besar
+    if (textScale > 1.3) {
+      return baseSize / textScale;
+    }
+    
+    return baseSize;
+  }
+
+  // Build camera preview dengan scaling yang benar untuk full screen tanpa distorsi
+  Widget _buildCameraPreview() {
+    if (_controller == null || !_controller!.value.isInitialized) {
+      return Container(color: Colors.black);
+    }
+
+    final size = MediaQuery.of(context).size;
+    var scale = size.aspectRatio * _controller!.value.aspectRatio;
+
+    // To prevent scaling down, invert the value
+    if (scale < 1) scale = 1 / scale;
+
+    return ClipRect(
+      child: Transform.scale(
+        scale: scale,
+        child: Center(
+          child: CameraPreview(_controller!),
+        ),
+      ),
+    );
+  }
+
+  // Helper untuk padding responsive
+  EdgeInsets _getResponsivePadding(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final textScale = MediaQuery.of(context).textScaleFactor;
+    
+    double horizontal = 20;
+    double vertical = 16;
+    
+    if (screenWidth < 360) {
+      horizontal = 12;
+      vertical = 12;
+    } else if (screenWidth < 400) {
+      horizontal = 16;
+      vertical = 14;
+    }
+    
+    // Kurangi padding jika text scale besar
+    if (textScale > 1.3) {
+      horizontal *= 0.9;
+      vertical *= 0.9;
+    }
+    
+    return EdgeInsets.symmetric(horizontal: horizontal, vertical: vertical);
   }
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final screenWidth = mediaQuery.size.width;
+    
     // Check if camera is ready and controller is valid
     bool isCameraValid = false;
-    try {
-      isCameraValid = _isCameraReady && 
-                      _controller != null && 
-                      _controller!.value.isInitialized;
-    } catch (e) {
-      // Controller might be disposed, treat as invalid
-      isCameraValid = false;
+    if (!_isDisposing && !_isInitializing) {
+      try {
+        isCameraValid = _isCameraReady && 
+                        _controller != null && 
+                        _controller!.value.isInitialized;
+      } catch (e) {
+        // Controller might be disposed, treat as invalid
+        isCameraValid = false;
+        debugPrint('Error checking camera validity: $e');
+      }
     }
+    
+    // Ukuran button yang responsive
+    final buttonSize = _getResponsiveSize(context, 44);
+    final iconSize = _getResponsiveSize(context, 24);
+    final captureButtonSize = _getResponsiveSize(context, 80);
+    final captureIconSize = _getResponsiveSize(context, 40);
+    final bottomButtonSize = _getResponsiveSize(context, 60);
+    final bottomIconSize = _getResponsiveSize(context, 28);
+    
+    // Font size yang responsive
+    final titleFontSize = _getResponsiveSize(context, 18);
     
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Stack(
           children: [
-            // Full screen camera preview
+            // Full screen camera preview dengan aspect ratio yang benar
             if (isCameraValid)
               Positioned.fill(
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  alignment: Alignment.center,
-                  child: SizedBox(
-                    width: MediaQuery.of(context).size.width,
-                    height: MediaQuery.of(context).size.height,
-                    child: CameraPreview(_controller!),
-                  ),
-                ),
+                child: _buildCameraPreview(),
               )
             else
-              const Positioned.fill(
-                child: Center(
-                  child: CircularProgressIndicator(color: Colors.white),
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black,
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (_errorMessage != null) ...[
+                          // Error state - show error message and retry button
+                          const Icon(
+                            Icons.error_outline,
+                            color: Colors.white,
+                            size: 64,
+                          ),
+                          const SizedBox(height: 24),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Column(
+                              children: [
+                                Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 24),
+                                ElevatedButton(
+                                  onPressed: _isInitializing ? null : _initializeCamera,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: Colors.black,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 32,
+                                      vertical: 12,
+                                    ),
+                                  ),
+                                  child: _isInitializing
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                                          ),
+                                        )
+                                      : const Text('Coba Lagi'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ] else ...[
+                          // Loading state - show loading indicator
+                          const CircularProgressIndicator(color: Colors.white),
+                          const SizedBox(height: 24),
+                          const Text(
+                            'Menginisialisasi kamera...',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
 
@@ -281,12 +704,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               left: 0,
               right: 0,
               child: Container(
-                padding: const EdgeInsets.only(
-                  top: 16,
-                  left: 20,
-                  right: 20,
-                  bottom: 16,
-                ),
+                padding: _getResponsivePadding(context),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
@@ -299,32 +717,44 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     // Tombol Close
                     GestureDetector(
                       onTap: () => Navigator.of(context).pop(),
                       child: Container(
-                        width: 44,
-                        height: 44,
+                        width: buttonSize,
+                        height: buttonSize,
                         decoration: BoxDecoration(
                           color: Colors.black.withOpacity(0.5),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.close,
                           color: Colors.white,
-                          size: 24,
+                          size: iconSize,
                         ),
                       ),
                     ),
 
-                    // Title
-                    Text(
-                      widget.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
+                    // Title - menggunakan Flexible dan FittedBox untuk mencegah overflow
+                    Flexible(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: screenWidth < 360 ? 4 : 8),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            widget.title,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: titleFontSize,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ),
                     ),
 
@@ -335,8 +765,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                       GestureDetector(
                         onTap: _toggleFlash,
                         child: Container(
-                          width: 44,
-                          height: 44,
+                          width: buttonSize,
+                          height: buttonSize,
                           decoration: BoxDecoration(
                             color: Colors.black.withOpacity(0.5),
                             shape: BoxShape.circle,
@@ -344,12 +774,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                           child: Icon(
                             _isFlashOn ? Icons.flash_on : Icons.flash_off,
                             color: Colors.white,
-                            size: 24,
+                            size: iconSize,
                           ),
                         ),
                       )
                     else
-                      const SizedBox(width: 44),
+                      SizedBox(width: buttonSize),
                   ],
                 ),
               ),
@@ -361,9 +791,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               left: 0,
               right: 0,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 40,
-                  horizontal: 24,
+                padding: EdgeInsets.symmetric(
+                  vertical: _getResponsiveSize(context, 40),
+                  horizontal: _getResponsiveSize(context, 24),
                 ),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -388,37 +818,37 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                           GestureDetector(
                             onTap: _pickFromGallery,
                             child: Container(
-                              width: 60,
-                              height: 60,
+                              width: bottomButtonSize,
+                              height: bottomButtonSize,
                               decoration: BoxDecoration(
                                 color: Colors.black.withOpacity(0.5),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.photo_library,
                                 color: Colors.white,
-                                size: 28,
+                                size: bottomIconSize,
                               ),
                             ),
                           )
                         else
-                          const SizedBox(width: 60, height: 60),
+                          SizedBox(width: bottomButtonSize, height: bottomButtonSize),
 
                         // Spacer untuk memusatkan tombol capture
                         const Expanded(child: SizedBox()),
 
-                        // Tombol Capture (tengah) - DIUBAH AGAR ICON DI TENGAH
+                        // Tombol Capture (tengah)
                         GestureDetector(
                           onTap: _isCapturing ? null : _capturePhoto,
                           child: Container(
-                            width: 80,
-                            height: 80,
+                            width: captureButtonSize,
+                            height: captureButtonSize,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: Colors.white,
                               border: Border.all(
                                 color: Colors.white.withOpacity(0.8),
-                                width: 5,
+                                width: _getResponsiveSize(context, 5),
                               ),
                               boxShadow: [
                                 BoxShadow(
@@ -429,8 +859,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                               ],
                             ),
                             child: _isCapturing
-                                ? Container(
-                                    padding: const EdgeInsets.all(20),
+                                ? Padding(
+                                    padding: EdgeInsets.all(_getResponsiveSize(context, 20)),
                                     child: const CircularProgressIndicator(
                                       strokeWidth: 3,
                                       valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
@@ -440,7 +870,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                                     child: Icon(
                                       Icons.camera_alt,
                                       color: Colors.black,
-                                      size: 40,
+                                      size: captureIconSize,
                                     ),
                                   ),
                           ),
@@ -454,26 +884,26 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                           GestureDetector(
                             onTap: _switchCamera,
                             child: Container(
-                              width: 60,
-                              height: 60,
+                              width: bottomButtonSize,
+                              height: bottomButtonSize,
                               decoration: BoxDecoration(
                                 color: Colors.black.withOpacity(0.5),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.flip_camera_ios,
                                 color: Colors.white,
-                                size: 28,
+                                size: bottomIconSize,
                               ),
                             ),
                           )
                         else
-                          const SizedBox(width: 60, height: 60),
+                          SizedBox(width: bottomButtonSize, height: bottomButtonSize),
                       ],
                     ),
 
-                    // Spasi bawah untuk menghindari notch
-                    const SizedBox(height: 20),
+                    // Spasi bawah untuk menghindari notch - responsive
+                    SizedBox(height: _getResponsiveSize(context, 20)),
                   ],
                 ),
               ),
