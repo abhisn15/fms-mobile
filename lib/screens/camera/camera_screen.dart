@@ -7,11 +7,13 @@ import 'package:permission_handler/permission_handler.dart';
 class CameraScreen extends StatefulWidget {
   final String title;
   final bool allowGallery;
+  final bool preferLowResolution;
 
   const CameraScreen({
     super.key,
     required this.title,
     this.allowGallery = true,
+    this.preferLowResolution = false,
   });
 
   @override
@@ -147,7 +149,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       // Try different resolution presets for device compatibility
       // Start with medium (better compatibility for older devices like Redmi 5A)
       // Fallback to low if medium fails, then try high as last resort
-      final presets = [ResolutionPreset.medium, ResolutionPreset.low, ResolutionPreset.high];
+      final presets = widget.preferLowResolution
+          ? [ResolutionPreset.low, ResolutionPreset.medium]
+          : [ResolutionPreset.medium, ResolutionPreset.low, ResolutionPreset.high];
       Exception? lastError;
       bool initialized = false;
 
@@ -304,7 +308,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       // Try medium preset first for better compatibility
       _controller = CameraController(
         _cameras![_currentCameraIndex],
-        ResolutionPreset.medium,
+        widget.preferLowResolution ? ResolutionPreset.low : ResolutionPreset.medium,
         enableAudio: false,
       );
       
@@ -519,6 +523,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           _isCameraReady = false;
         });
       }
+      _isDisposing = false;
     }
   }
 

@@ -27,8 +27,8 @@ Semua kredensial dan informasi sensitif sudah dipindahkan ke file `.env` yang **
 
 2. **Edit file `.env`** dengan nilai yang sesuai:
    ```env
-   API_BASE_URL=http://10.0.2.2:3001
-   GCS_BUCKET_NAME=mms.mindotek.com
+   API_BASE_URL=http://localhost:3001
+   GCS_BUCKET_NAME=your-bucket-name
    ```
 
 3. **JANGAN commit file `.env`!**

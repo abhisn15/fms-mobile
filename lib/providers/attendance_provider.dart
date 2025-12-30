@@ -1,14 +1,19 @@
 import 'package:flutter/foundation.dart';
 import 'dart:io';
 import '../models/attendance_model.dart';
+import '../models/user_model.dart';
 import '../services/attendance_service.dart';
+import '../services/realtime_location_service.dart';
 import '../services/offline_storage_service.dart';
+import '../services/auth_service.dart';
 import '../utils/error_handler.dart';
 import 'connectivity_provider.dart';
 
 class AttendanceProvider with ChangeNotifier {
   final AttendanceService _attendanceService = AttendanceService();
+  final RealtimeLocationService _realtimeService = RealtimeLocationService();
   final OfflineStorageService _offlineStorage = OfflineStorageService();
+  final AuthService _authService = AuthService();
   ConnectivityProvider? _connectivityProvider;
   AttendancePayload? _attendanceData;
   bool _isLoading = false;
@@ -21,6 +26,7 @@ class AttendanceProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isOfflineMode => _isOfflineMode;
+  bool get isRealtimeTracking => _realtimeService.isTracking;
 
   void setConnectivityProvider(ConnectivityProvider provider) {
     _connectivityProvider = provider;
@@ -157,6 +163,43 @@ class AttendanceProvider with ChangeNotifier {
               endDate: now,
               forceRefresh: true,
             );
+
+            // Start realtime location tracking setelah check-in berhasil
+            try {
+              debugPrint('[AttendanceProvider] Starting realtime location tracking...');
+              final user = await _authService.getCurrentUser();
+              debugPrint('[AttendanceProvider] Current user: ${user?.name} (${user?.id})');
+
+              // Wait a bit for attendance data to be updated
+              await Future.delayed(const Duration(milliseconds: 500));
+
+              final todayRecord = todayAttendance;
+              debugPrint('[AttendanceProvider] Today attendance: ${todayRecord?.checkIn} - ${todayRecord?.checkOut}, ID: ${todayRecord?.id}');
+
+              if (user != null && todayRecord != null) {
+                debugPrint('[AttendanceProvider] ✅ User and attendance record available');
+
+                // Use attendance ID if available, otherwise use a temporary ID
+                final attendanceId = todayRecord.id.isNotEmpty ? todayRecord.id : 'temp-${user.id}-${now.millisecondsSinceEpoch}';
+                debugPrint('[AttendanceProvider] Using attendance ID: $attendanceId');
+
+                // Gunakan interval default 10 detik untuk testing
+                await _realtimeService.startRealtimeTracking(
+                  user: user,
+                  attendanceId: attendanceId,
+                  checkInDate: now,
+                  intervalSeconds: 10,
+                );
+                debugPrint('[AttendanceProvider] ✓ Realtime tracking started successfully');
+              } else {
+                debugPrint('[AttendanceProvider] ❌ Cannot start tracking: user=${user != null}, todayRecord=${todayRecord != null}');
+              }
+            } catch (e) {
+              debugPrint('[AttendanceProvider] ❌ Failed to start realtime tracking: $e');
+              debugPrint('[AttendanceProvider] Stack trace: ${e.toString()}');
+              // Don't fail check-in just because tracking failed
+            }
+
             return true;
           } else {
             _error = result['message'] as String? ?? 'Check-in gagal';
@@ -233,6 +276,17 @@ class AttendanceProvider with ChangeNotifier {
             // Reset loading sebelum loadAttendance untuk menghindari loading state yang stuck
             _isLoading = false;
             notifyListeners();
+
+            // Stop realtime location tracking setelah check-out berhasil
+            try {
+              debugPrint('[AttendanceProvider] Stopping realtime location tracking...');
+              await _realtimeService.stopRealtimeTracking();
+              debugPrint('[AttendanceProvider] ✓ Realtime tracking stopped');
+            } catch (e) {
+              debugPrint('[AttendanceProvider] Failed to stop realtime tracking: $e');
+              // Don't fail check-out just because tracking stop failed
+            }
+
             // Load attendance dengan forceRefresh untuk mendapatkan data terbaru
             final now = DateTime.now();
             final startDate = DateTime(now.year, now.month, 1);
@@ -295,5 +349,55 @@ class AttendanceProvider with ChangeNotifier {
       notifyListeners();
     }
   }
-}
 
+  Future<bool> pauseRealtimeTracking() async {
+    if (!_realtimeService.isTracking) {
+      return false;
+    }
+    try {
+      await _realtimeService.stopRealtimeTracking();
+      return true;
+    } catch (e) {
+      debugPrint('[AttendanceProvider] Failed to pause tracking: $e');
+      return false;
+    }
+  }
+
+  Future<void> syncRealtimeTracking() async {
+    if (_realtimeService.isTracking) {
+      return;
+    }
+
+    final today = todayAttendance;
+    if (today == null || today.checkIn == null || today.checkOut != null) {
+      return;
+    }
+
+    final user = await _authService.getCurrentUser();
+    if (user == null) {
+      return;
+    }
+
+    DateTime checkInDate;
+    try {
+      checkInDate = DateTime.parse(today.date);
+    } catch (_) {
+      checkInDate = DateTime.now();
+    }
+
+    final attendanceId = today.id.isNotEmpty
+        ? today.id
+        : 'temp-${user.id}-${DateTime.now().millisecondsSinceEpoch}';
+
+    try {
+      await _realtimeService.startRealtimeTracking(
+        user: user,
+        attendanceId: attendanceId,
+        checkInDate: checkInDate,
+        intervalSeconds: 10,
+      );
+    } catch (e) {
+      debugPrint('[AttendanceProvider] Failed to resume tracking: $e');
+    }
+  }
+}

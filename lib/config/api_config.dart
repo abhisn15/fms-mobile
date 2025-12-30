@@ -46,6 +46,8 @@ class ApiConfig {
   static const String requests = '/api/ess/requests';
   static const String profile = '/api/ess/profile';
   static const String setPassword = '/api/ess/profile/set-password';
+  static const String realtimeLog = '/api/supervisor/attendance/realtime/log';
+  static const String clientErrorLog = '/api/ess/client-logs';
   
   // Helper methods
   static String getFullUrl(String endpoint) {

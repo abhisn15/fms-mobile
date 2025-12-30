@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../auth/login_screen.dart';
 import '../home/home_screen.dart';
+import '../profile/force_password_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -55,11 +56,16 @@ class _SplashScreenState extends State<SplashScreen>
     await _controller.reverse();
 
     if (mounted) {
+      final user = authProvider.user;
+      final needsPasswordSetup =
+          (user?.hasPassword == false) || (user?.needsPasswordChange == true);
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) =>
               authProvider.isAuthenticated
-              ? const HomeScreen()
+              ? (needsPasswordSetup
+                  ? const ForcePasswordScreen()
+                  : const HomeScreen())
               : const LoginScreen(),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);

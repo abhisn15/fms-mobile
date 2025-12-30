@@ -26,6 +26,16 @@ Dokumentasi lengkap untuk perbaikan dan optimasi aplikasi Atenim Mobile.
    - Menghapus pemanggilan duplikat loadAttendance
    - Memastikan loading state di-reset dengan benar
 
+### Release & Distribusi
+
+1. **[Release Notes v1.0.8](RELEASE_NOTES_v1.0.8.md)** - Catatan rilis versi
+2. **[Release Signing Setup](RELEASE_SIGNING_SETUP.md)** - Setup signing untuk Play Store
+3. **[Create Keystore](CREATE_KEYSTORE.md)** - Panduan membuat keystore
+4. **[Play Store Upload Guide](PLAY_STORE_UPLOAD_GUIDE.md)** - Panduan upload ke Play Store
+5. **[Google Play Description](GOOGLE_PLAY_DESCRIPTION.md)** - Listing description Play Store
+6. **[Icon Setup](ICON_SETUP.md)** - Panduan setup icon aplikasi
+7. **[Security Guide](SECURITY.md)** - Panduan keamanan konfigurasi
+
 ## Fitur Utama
 
 ### ✅ Check-In/Check-Out

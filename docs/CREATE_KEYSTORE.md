@@ -26,10 +26,10 @@ java -version
 
 # Jika Java ada, cari keytool
 # Biasanya di: C:\Program Files\Java\jdk-XX\bin\keytool.exe
-# Atau di Android SDK: C:\Users\TPM\AppData\Local\Android\Sdk\jbr\bin\keytool.exe
+# Atau di Android SDK: C:\Users\<USERNAME>\AppData\Local\Android\Sdk\jbr\bin\keytool.exe
 
 # Jalankan keytool dengan path lengkap
-& "C:\Users\TPM\AppData\Local\Android\Sdk\jbr\bin\keytool.exe" -genkey -v -keystore android\upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+& "C:\Users\<USERNAME>\AppData\Local\Android\Sdk\jbr\bin\keytool.exe" -genkey -v -keystore android\upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
 ```
 
 ## Opsi 3: Download Java JDK

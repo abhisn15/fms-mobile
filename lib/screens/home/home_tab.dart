@@ -509,6 +509,10 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     debugPrint('[HomeTab] Check-out button pressed');
     debugPrint('[HomeTab] Opening camera for check-out selfie...');
 
+    final attendanceProvider =
+        Provider.of<AttendanceProvider>(context, listen: false);
+    final wasTracking = await attendanceProvider.pauseRealtimeTracking();
+
     // Buka kamera untuk selfie (hanya kamera, tidak boleh galeri)
     final photo = await Navigator.push<File>(
       context,
@@ -516,6 +520,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
         builder: (_) => const CameraScreen(
           title: 'Ambil Selfie untuk Check-Out',
           allowGallery: false, // Check-out hanya boleh kamera
+          preferLowResolution: true,
         ),
       ),
     );
@@ -523,8 +528,6 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     if (photo != null && mounted) {
       debugPrint('[HomeTab] Photo captured: ${photo.path}');
       debugPrint('[HomeTab] Submitting check-out...');
-      final attendanceProvider =
-          Provider.of<AttendanceProvider>(context, listen: false);
       
       try {
         final success = await attendanceProvider.checkOut(photo: photo);
@@ -555,6 +558,9 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
             if (mounted) {
               ToastHelper.showError(context, attendanceProvider.error ?? 'Check-out gagal');
             }
+            if (wasTracking) {
+              await attendanceProvider.syncRealtimeTracking();
+            }
           }
         }
       } catch (e) {
@@ -562,9 +568,15 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
         if (mounted) {
           ToastHelper.showError(context, 'Terjadi kesalahan saat check-out: $e');
         }
+        if (wasTracking) {
+          await attendanceProvider.syncRealtimeTracking();
+        }
       }
     } else {
       debugPrint('[HomeTab] Photo capture cancelled or widget unmounted');
+      if (wasTracking) {
+        await attendanceProvider.syncRealtimeTracking();
+      }
     }
   }
 
@@ -1790,6 +1802,23 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                                       fontSize: 12,
                                     ),
                                   ),
+                                  Consumer<AttendanceProvider>(
+                                    builder: (context, attendanceProvider, _) {
+                                      // Check if user is currently checked in and realtime tracking is active
+                                      final today = attendanceProvider.todayAttendance;
+                                      final isCheckedIn = today?.checkIn != null && today?.checkOut == null;
+                                      if (isCheckedIn) {
+                                        return Text(
+                                          '📍 Lokasi dilacak setiap 10 detik saat check-in',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                          ),
+                                        );
+                                      }
+                                      return const SizedBox.shrink();
+                                    },
+                                  ),
                                 ],
                               ),
                             ),
@@ -2031,7 +2060,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                                         Flexible(
                                           flex: 3,
                                           child: Text(
-                                            '${record.checkIn ?? "-"} → ${record.checkOut ?? "-"}',
+                                            '${record.checkIn ?? "-"} - ${record.checkOut ?? "-"}',
                                             style: TextStyle(
                                               fontSize: 8, // Reduced from 9 to 8
                                               color: Colors.grey[600],

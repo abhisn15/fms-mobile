@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -13,25 +16,41 @@ import 'screens/auth/login_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/attendance/attendance_screen.dart';
+import 'screens/profile/force_password_screen.dart';
 import 'services/api_service.dart';
+import 'services/error_reporting_service.dart';
 
 // Global navigator key untuk akses navigator dari mana saja
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  // Load environment variables
-  try {
-    await dotenv.load(fileName: ".env");
-  } catch (e) {
-    // Silently use default configuration
-  }
-  
-  // Initialize Indonesian locale data for DateFormat
-  await initializeDateFormatting('id_ID', null);
-  
-  runApp(const MyApp());
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      ErrorReportingService().reportFlutterError(details);
+    };
+
+    PlatformDispatcher.instance.onError = (error, stack) {
+      ErrorReportingService().reportError(error, stack, isFatal: true);
+      return true;
+    };
+
+    // Load environment variables
+    try {
+      await dotenv.load(fileName: ".env");
+    } catch (e) {
+      // Silently use default configuration
+    }
+
+    // Initialize Indonesian locale data for DateFormat
+    await initializeDateFormatting('id_ID', null);
+
+    runApp(const MyApp());
+  }, (error, stack) {
+    ErrorReportingService().reportError(error, stack, isFatal: true);
+  });
 }
 
 class MyApp extends StatefulWidget {
@@ -168,6 +187,12 @@ class AuthWrapper extends StatelessWidget {
         }
 
         if (authProvider.isAuthenticated) {
+          final user = authProvider.user;
+          final needsPasswordSetup =
+              (user?.hasPassword == false) || (user?.needsPasswordChange == true);
+          if (needsPasswordSetup) {
+            return const ForcePasswordScreen();
+          }
           return const HomeScreen();
         }
 

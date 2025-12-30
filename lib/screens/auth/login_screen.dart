@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../home/home_screen.dart';
+import '../profile/force_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -35,8 +36,15 @@ class _LoginScreenState extends State<LoginScreen> {
     );
 
     if (success && mounted) {
+      final user = authProvider.user;
+      final needsPasswordSetup =
+          (user?.hasPassword == false) || (user?.needsPasswordChange == true);
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(
+          builder: (_) => needsPasswordSetup
+              ? const ForcePasswordScreen()
+              : const HomeScreen(),
+        ),
       );
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

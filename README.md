@@ -12,10 +12,12 @@ Aplikasi mobile Flutter untuk karyawan dengan semua fitur dari website employee,
 - Login hanya bisa dilakukan oleh user dengan role `karyawan`
 - Session management dengan cookie-based authentication
 - Auto-redirect ke home jika sudah login
+- Wajib set password jika masih default atau diminta ganti
 
 ### ✅ My Day (Home)
 - Check-in dengan selfie dan GPS otomatis
 - Check-out dengan selfie dan GPS otomatis
+- Realtime location tracking saat check-in (interval default 10 detik)
 - Tampilan status kehadiran hari ini
 - Durasi waktu bekerja (real-time)
 - Informasi shift yang di-assign
@@ -94,10 +96,10 @@ API_BASE_URL=http://10.0.2.2:3001
 # API_BASE_URL=http://192.168.1.100:3001
 
 # 4. Production
-# API_BASE_URL=https://atenim.tpm-facility.com
+# API_BASE_URL=https://api.example.com
 
 # Google Cloud Storage Configuration
-GCS_BUCKET_NAME=mms.mindotek.com
+GCS_BUCKET_NAME=your-bucket-name
 ```
 
 **Cara menemukan IP komputer untuk Physical Device:**
@@ -233,8 +235,8 @@ Semua upload gambar (check-in, check-out, activity, patroli checkpoint, profile)
 ## Testing
 
 ### Test Login
-- Email: `karyawan@example.com` (sesuaikan dengan data di database)
-- Password: `Karyawan#123` (sesuaikan dengan konfigurasi backend)
+- Email: gunakan akun karyawan yang tersedia di database
+- Password: gunakan password dari admin atau hasil reset
 
 ### Test Check-In
 1. Login sebagai karyawan
@@ -307,10 +309,15 @@ Semua upload gambar (check-in, check-out, activity, patroli checkpoint, profile)
 
 ## Dokumentasi Tambahan
 
+- [Dokumentasi Teknis](docs/README.md) - Indeks dokumentasi lengkap
 - [Camera Fix Documentation](docs/CAMERA_FIX.md) - Dokumentasi perbaikan camera preview
-- [Release Notes](RELEASE_NOTES_v1.0.8.md) - Catatan rilis versi
-- [Security](SECURITY.md) - Informasi keamanan
-- [Play Store Upload Guide](PLAY_STORE_UPLOAD_GUIDE.md) - Panduan upload ke Play Store
+- [Release Notes](docs/RELEASE_NOTES_v1.0.8.md) - Catatan rilis versi
+- [Security](docs/SECURITY.md) - Informasi keamanan
+- [Play Store Upload Guide](docs/PLAY_STORE_UPLOAD_GUIDE.md) - Panduan upload ke Play Store
+- [Release Signing Setup](docs/RELEASE_SIGNING_SETUP.md) - Setup release signing
+- [Create Keystore](docs/CREATE_KEYSTORE.md) - Panduan membuat keystore
+- [Google Play Description](docs/GOOGLE_PLAY_DESCRIPTION.md) - Listing description Play Store
+- [Icon Setup](docs/ICON_SETUP.md) - Panduan setup icon aplikasi
 
 ## License
 
