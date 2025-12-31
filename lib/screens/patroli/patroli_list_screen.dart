@@ -30,6 +30,26 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
     return DateTime.now();
   }
 
+  DateTime? _parseActivityDate(DailyActivity activity) {
+    final parsedDate = DateTime.tryParse(activity.date);
+    final createdAt = activity.createdAt.isNotEmpty
+        ? DateTime.tryParse(activity.createdAt)?.toLocal()
+        : null;
+    if (parsedDate == null) {
+      return createdAt;
+    }
+    if (createdAt == null) {
+      return parsedDate;
+    }
+    final dateOnly = DateTime(parsedDate.year, parsedDate.month, parsedDate.day);
+    final createdOnly = DateTime(createdAt.year, createdAt.month, createdAt.day);
+    final diffDays = (createdOnly.difference(dateOnly).inDays).abs();
+    if (diffDays <= 1) {
+      return createdAt;
+    }
+    return parsedDate;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -187,28 +207,28 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
                 
                 // Filter activities yang merupakan patroli:
                 // 1. Punya latitude/longitude (GPS)
-                // 2. Notes mengandung "📍" (indikator patroli dari backend)
-                // 3. Filter berdasarkan tanggal
+                // 2. Punya locationName atau checkpoints
+                // 3. Notes mengandung "📍" (indikator patroli dari backend)
+                // 4. Filter berdasarkan tanggal
                 final startDateOnly = DateTime(_startDate.year, _startDate.month, _startDate.day);
                 final endDateOnly = DateTime(_endDate.year, _endDate.month, _endDate.day).add(const Duration(days: 1));
                 
                 final patroliList = allActivities.where((activity) {
                   final hasGPS = activity.latitude != null && activity.longitude != null;
                   final hasPatroliMarker = activity.notes != null && activity.notes!.contains('📍');
+                  final hasLocationName = activity.locationName != null && activity.locationName!.isNotEmpty;
+                  final hasCheckpoints = activity.checkpoints != null && activity.checkpoints!.isNotEmpty;
                   
-                  final isPatroli = hasGPS || hasPatroliMarker;
+                  final isPatroli = hasGPS || hasLocationName || hasCheckpoints || hasPatroliMarker;
                   
                   if (!isPatroli) return false;
                   
                   // Filter berdasarkan tanggal
-                  try {
-                    final activityDate = DateTime.parse(activity.date);
-                    final activityDateOnly = DateTime(activityDate.year, activityDate.month, activityDate.day);
-                    if (activityDateOnly.isBefore(startDateOnly.subtract(const Duration(days: 1)))) return false;
-                    if (activityDateOnly.isAfter(endDateOnly)) return false;
-                  } catch (e) {
-                    return false;
-                  }
+                  final activityDate = _parseActivityDate(activity);
+                  if (activityDate == null) return true;
+                  final activityDateOnly = DateTime(activityDate.year, activityDate.month, activityDate.day);
+                  if (activityDateOnly.isBefore(startDateOnly.subtract(const Duration(days: 1)))) return false;
+                  if (activityDateOnly.isAfter(endDateOnly)) return false;
                   
                   return true;
                 }).toList();
@@ -278,7 +298,7 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
                                 ),
                                 child: Text(
                                   DateFormat('dd MMM yyyy', 'id_ID').format(
-                                    DateTime.parse(patroli.date),
+                                    _parseActivityDate(patroli) ?? DateTime.now(),
                                   ),
                                   style: TextStyle(
                                     color: Colors.blue[900],
@@ -476,7 +496,7 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
                         const SizedBox(width: 8),
                         Text(
                           DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(
-                            DateTime.parse(patroli.date),
+                            _parseActivityDate(patroli) ?? DateTime.now(),
                           ),
                           style: TextStyle(
                             fontSize: 14,

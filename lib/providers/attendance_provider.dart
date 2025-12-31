@@ -140,14 +140,22 @@ class AttendanceProvider with ChangeNotifier {
     notifyListeners();
 
     final isConnected = _connectivityProvider?.isConnected ?? true;
+    User? sessionUser;
 
     try {
       if (isConnected) {
         // Try to check-in online
         try {
+          try {
+            sessionUser = await _authService.getCurrentUser();
+          } catch (_) {
+            sessionUser = null;
+          }
+
           final result = await _attendanceService.checkIn(
             photo: photo,
             shiftId: shiftId, // Opsional - bisa null
+            site: sessionUser?.site,
           );
 
           if (result['success'] == true) {
@@ -157,6 +165,22 @@ class AttendanceProvider with ChangeNotifier {
             notifyListeners();
             // Load attendance dengan forceRefresh untuk mendapatkan data terbaru
             final now = DateTime.now();
+            final responseData = result['data'];
+            String? responseAttendanceId;
+            DateTime? responseCheckInDate;
+            if (responseData is Map) {
+              final rawId = responseData['id'];
+              if (rawId is String && rawId.isNotEmpty) {
+                responseAttendanceId = rawId;
+              }
+              final rawDate = responseData['date'];
+              if (rawDate is String && rawDate.isNotEmpty) {
+                try {
+                  responseCheckInDate = DateTime.parse(rawDate);
+                } catch (_) {}
+              }
+            }
+            bool trackingStarted = false;
             final startDate = DateTime(now.year, now.month, 1);
             await loadAttendance(
               startDate: startDate,
@@ -167,32 +191,45 @@ class AttendanceProvider with ChangeNotifier {
             // Start realtime location tracking setelah check-in berhasil
             try {
               debugPrint('[AttendanceProvider] Starting realtime location tracking...');
-              final user = await _authService.getCurrentUser();
+              final user = sessionUser ?? await _authService.getCurrentUser();
               debugPrint('[AttendanceProvider] Current user: ${user?.name} (${user?.id})');
 
-              // Wait a bit for attendance data to be updated
-              await Future.delayed(const Duration(milliseconds: 500));
-
-              final todayRecord = todayAttendance;
-              debugPrint('[AttendanceProvider] Today attendance: ${todayRecord?.checkIn} - ${todayRecord?.checkOut}, ID: ${todayRecord?.id}');
-
-              if (user != null && todayRecord != null) {
-                debugPrint('[AttendanceProvider] ✅ User and attendance record available');
-
-                // Use attendance ID if available, otherwise use a temporary ID
-                final attendanceId = todayRecord.id.isNotEmpty ? todayRecord.id : 'temp-${user.id}-${now.millisecondsSinceEpoch}';
-                debugPrint('[AttendanceProvider] Using attendance ID: $attendanceId');
-
-                // Gunakan interval default 10 detik untuk testing
+              if (user != null && responseAttendanceId != null) {
+                debugPrint('[AttendanceProvider] Using attendance ID from response: $responseAttendanceId');
                 await _realtimeService.startRealtimeTracking(
                   user: user,
-                  attendanceId: attendanceId,
-                  checkInDate: now,
+                  attendanceId: responseAttendanceId,
+                  checkInDate: responseCheckInDate ?? now,
                   intervalSeconds: 10,
                 );
-                debugPrint('[AttendanceProvider] ✓ Realtime tracking started successfully');
-              } else {
-                debugPrint('[AttendanceProvider] ❌ Cannot start tracking: user=${user != null}, todayRecord=${todayRecord != null}');
+                trackingStarted = true;
+                debugPrint('[AttendanceProvider] ?o" Realtime tracking started (response record)');
+              }
+
+              if (!trackingStarted) {
+                // Wait a bit for attendance data to be updated
+                await Future.delayed(const Duration(milliseconds: 500));
+
+                final todayRecord = todayAttendance;
+                debugPrint('[AttendanceProvider] Today attendance: ${todayRecord?.checkIn} - ${todayRecord?.checkOut}, ID: ${todayRecord?.id}');
+
+                if (user != null && todayRecord != null) {
+                  debugPrint('[AttendanceProvider] ?o. User and attendance record available');
+
+                  // Use attendance ID if available, otherwise use a temporary ID
+                  final attendanceId = todayRecord.id.isNotEmpty ? todayRecord.id : 'temp-${user.id}-${now.millisecondsSinceEpoch}';
+                  debugPrint('[AttendanceProvider] Using attendance ID: $attendanceId');
+
+                  await _realtimeService.startRealtimeTracking(
+                    user: user,
+                    attendanceId: attendanceId,
+                    checkInDate: now,
+                    intervalSeconds: 10,
+                  );
+                  debugPrint('[AttendanceProvider] ?o" Realtime tracking started successfully');
+                } else {
+                  debugPrint('[AttendanceProvider] ??O Cannot start tracking: user=${user != null}, todayRecord=${todayRecord != null}');
+                }
               }
             } catch (e) {
               debugPrint('[AttendanceProvider] ❌ Failed to start realtime tracking: $e');
@@ -269,7 +306,17 @@ class AttendanceProvider with ChangeNotifier {
       if (isConnected) {
         // Try to check-out online
         try {
-          final result = await _attendanceService.checkOut(photo: photo);
+          User? sessionUser;
+          try {
+            sessionUser = await _authService.getCurrentUser();
+          } catch (_) {
+            sessionUser = null;
+          }
+
+          final result = await _attendanceService.checkOut(
+            photo: photo,
+            site: sessionUser?.site,
+          );
 
           if (result['success'] == true) {
             debugPrint('[AttendanceProvider] ✓ Check-out successful, reloading attendance...');

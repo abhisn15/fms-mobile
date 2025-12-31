@@ -31,6 +31,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   Timer? _durationTimer;
   DateTime? _checkInDateTime; // Store parsed check-in datetime
   final ValueNotifier<String> _durationNotifier = ValueNotifier<String>('00 : 00 : 00');
+  bool _isDisposed = false;
 
   @override
   void initState() {
@@ -84,6 +85,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _isDisposed = true;
     _durationTimer?.cancel();
     _durationNotifier.dispose();
     super.dispose();
@@ -92,48 +94,49 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    if (!mounted || _isDisposed) {
+      return;
+    }
     // Saat app kembali ke foreground, hitung durasi langsung dari database (tidak perlu timer di background)
     if (state == AppLifecycleState.resumed) {
-      if (mounted) {
-        debugPrint('[HomeTab] App resumed - calculating duration from database');
-        final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
-        final today = attendanceProvider.todayAttendance;
-        
-        // Langsung hitung durasi dari database tanpa perlu reload (lebih cepat)
-        if (today != null && today.checkIn != null && today.checkOut == null) {
-          final checkInDateTime = _parseCheckInDateTime(today);
-          if (checkInDateTime != null) {
-            // Update duration langsung dari perhitungan waktu check-in sampai sekarang
-            final currentDuration = _formatDuration(checkInDateTime);
-            _durationNotifier.value = currentDuration;
-            _checkInDateTime = checkInDateTime;
-            // Restart timer untuk update real-time selanjutnya
-            _startDurationTimer();
-          }
-        } else if (today != null && today.checkOut != null) {
-          // Sudah check-out, hitung total durasi
-          final checkInDateTime = _parseCheckInDateTime(today);
-          if (checkInDateTime != null) {
-            final checkOutDateTime = _parseCheckOutDateTime(today);
-            final totalDuration = _formatDuration(checkInDateTime, checkOutDateTime: checkOutDateTime);
-            _durationNotifier.value = totalDuration;
-            _durationTimer?.cancel();
-          }
+      debugPrint('[HomeTab] App resumed - calculating duration from database');
+      final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
+      final today = attendanceProvider.todayAttendance;
+      
+      // Langsung hitung durasi dari database tanpa perlu reload (lebih cepat)
+      if (today != null && today.checkIn != null && today.checkOut == null) {
+        final checkInDateTime = _parseCheckInDateTime(today);
+        if (checkInDateTime != null) {
+          // Update duration langsung dari perhitungan waktu check-in sampai sekarang
+          final currentDuration = _formatDuration(checkInDateTime);
+          _setDuration(currentDuration);
+          _checkInDateTime = checkInDateTime;
+          // Restart timer untuk update real-time selanjutnya
+          _startDurationTimer();
         }
-        
-        // Refresh data dari API di background (tidak blocking)
-        final now = DateTime.now();
-        final startDate = DateTime(now.year, now.month, 1);
-        attendanceProvider.loadAttendance(
-          startDate: startDate,
-          endDate: now,
-          forceRefresh: true,
-        ).then((_) {
-          if (mounted) {
-            _checkAndStartTimer(attendanceProvider);
-          }
-        });
+      } else if (today != null && today.checkOut != null) {
+        // Sudah check-out, hitung total durasi
+        final checkInDateTime = _parseCheckInDateTime(today);
+        if (checkInDateTime != null) {
+          final checkOutDateTime = _parseCheckOutDateTime(today);
+          final totalDuration = _formatDuration(checkInDateTime, checkOutDateTime: checkOutDateTime);
+          _setDuration(totalDuration);
+          _durationTimer?.cancel();
+        }
       }
+      
+      // Refresh data dari API di background (tidak blocking)
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month, 1);
+      attendanceProvider.loadAttendance(
+        startDate: startDate,
+        endDate: now,
+        forceRefresh: true,
+      ).then((_) {
+        if (mounted && !_isDisposed) {
+          _checkAndStartTimer(attendanceProvider);
+        }
+      });
     } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       // App di background - stop timer untuk hemat baterai
       // Timer tidak perlu berjalan di background karena durasi akan dihitung ulang saat app resume
@@ -229,6 +232,13 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     }
   }
 
+  void _setDuration(String value) {
+    if (!mounted || _isDisposed) {
+      return;
+    }
+    _durationNotifier.value = value;
+  }
+
   /// Parse check-out datetime dari attendance record
   DateTime? _parseCheckOutDateTime(AttendanceRecord? today) {
     if (today == null || today.checkOut == null || today.checkOut!.isEmpty) {
@@ -289,6 +299,9 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   }
 
   void _checkAndStartTimer(AttendanceProvider attendanceProvider) {
+    if (!mounted || _isDisposed) {
+      return;
+    }
     final today = attendanceProvider.todayAttendance;
     
     // Priority: Check if check-out exists first - stop timer immediately
@@ -305,7 +318,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       if (mounted && checkInDateTime != null) {
         final checkOutDateTime = _parseCheckOutDateTime(today);
         final totalDuration = _formatDuration(checkInDateTime, checkOutDateTime: checkOutDateTime);
-        _durationNotifier.value = totalDuration;
+        _setDuration(totalDuration);
       }
       return; // Don't start timer if checked out
     }
@@ -329,7 +342,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
           // Durasi dihitung dari waktu check-in sampai sekarang (real-time)
           if (_checkInDateTime != null) {
             final currentDuration = _formatDuration(_checkInDateTime);
-            _durationNotifier.value = currentDuration;
+            _setDuration(currentDuration);
           }
           _startDurationTimer();
         }
@@ -341,7 +354,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
         _durationTimer?.cancel();
       }
       _checkInDateTime = null;
-      _durationNotifier.value = '00 : 00 : 00';
+      _setDuration('00 : 00 : 00');
     }
   }
 
@@ -551,7 +564,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
               if (_checkInDateTime != null && updatedToday != null) {
                 final checkOutDateTime = _parseCheckOutDateTime(updatedToday);
                 final totalDuration = _formatDuration(_checkInDateTime, checkOutDateTime: checkOutDateTime);
-                _durationNotifier.value = totalDuration;
+                _setDuration(totalDuration);
               }
             }
           } else {
@@ -618,10 +631,10 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
               if (checkInDateTime != null) {
                 final checkOutDateTime = _parseCheckOutDateTime(today);
                 final totalDuration = _formatDuration(checkInDateTime, checkOutDateTime: checkOutDateTime);
-                _durationNotifier.value = totalDuration;
+                _setDuration(totalDuration);
               }
             } else {
-              _durationNotifier.value = '00 : 00 : 00';
+              _setDuration('00 : 00 : 00');
             }
           }
           return;
@@ -639,7 +652,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       // Tidak perlu akses database setiap detik, cukup hitung dari _checkInDateTime yang sudah ada
       if (mounted && _checkInDateTime != null) {
         final duration = _formatDuration(_checkInDateTime);
-        _durationNotifier.value = duration;
+        _setDuration(duration);
       }
     });
   }
@@ -653,6 +666,9 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
         
         // Check and start timer when attendance data changes
         WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _isDisposed) {
+            return;
+          }
           _checkAndStartTimer(attendanceProvider);
         });
         
@@ -906,28 +922,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                           ),
                         ),
                     ] else
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[50],
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.location_on_outlined, size: 18, color: Colors.grey[600]),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Lokasi akan direkam saat check-in',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[700],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      _buildGeofenceHint(context, forCheckOut: false),
                     // Shift Selection (hanya muncul jika belum check-in)
                     if (!hasCheckedIn) ...[
                       const SizedBox(height: 16),
@@ -948,6 +943,10 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                     if (!hasCheckedIn)
                       _buildShiftWarning(context),
                     if (!hasCheckedIn) const SizedBox(height: 12),
+                    if (hasCheckedIn && !hasCheckedOut) ...[
+                      _buildGeofenceHint(context, forCheckOut: true),
+                      const SizedBox(height: 12),
+                    ],
                     // Check-In/Check-Out Button
                     if (!hasCheckedIn)
                       _buildCheckInButton(context)
@@ -1111,6 +1110,67 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   Widget _buildShiftWarning(BuildContext context) {
     // Warning dihapus karena absen bisa dilakukan tanpa shift
     return const SizedBox.shrink();
+  }
+
+  String? _resolvePlacementName(String? siteName) {
+    final trimmed = siteName?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return null;
+    }
+    return trimmed;
+  }
+
+  String _buildUserDetailLine(String? title, String? siteName) {
+    final safeTitle = (title != null && title.trim().isNotEmpty) ? title.trim() : 'Employee';
+    final placementName = _resolvePlacementName(siteName);
+    if (placementName == null) {
+      return safeTitle;
+    }
+    return '$safeTitle \u2022 $placementName';
+  }
+
+  String _getGeofenceHintText(BuildContext context, {required bool forCheckOut}) {
+    final user = Provider.of<AuthProvider>(context, listen: false).user;
+    final site = user?.site;
+    final radius = site?.maxRadiusMeters;
+    final hasGeofence = site?.latitude != null && site?.longitude != null && radius != null;
+    final actionLabel = forCheckOut ? 'check-out' : 'check-in';
+
+    if (hasGeofence && radius != null) {
+      final placementName = _resolvePlacementName(site?.name);
+      final locationLabel = placementName ?? 'lokasi penempatan';
+      return 'GPS wajib aktif. Anda harus berada dalam radius ${radius}m dari $locationLabel untuk $actionLabel.';
+    }
+
+    return 'GPS wajib aktif. Pastikan berada di lokasi penempatan saat $actionLabel.';
+  }
+
+  Widget _buildGeofenceHint(BuildContext context, {required bool forCheckOut}) {
+    final message = _getGeofenceHintText(context, forCheckOut: forCheckOut);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange[50],
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.orange[200]!),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.gps_fixed, size: 18, color: Colors.orange[700]),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.orange[900],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildCheckInButton(BuildContext context) {
@@ -1483,17 +1543,16 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                           ),
                         ],
                       ),
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.left,
                     ),
-                    const SizedBox(height: 4),
-                    // Title/jabatan
+                    const SizedBox(height: 2),
                     Text(
-                      user.title ?? 'Employee',
+                      _buildUserDetailLine(user.title, user.site?.name),
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.95),
-                        fontSize: 12,
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 11,
                         fontWeight: FontWeight.w500,
                         height: 1.2,
                       ),

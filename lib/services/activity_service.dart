@@ -17,18 +17,29 @@ class ActivityService {
         // Backend returns { data: { entries: [...], timeline: [...] } }
         final data = response.data['data'];
         if (data == null) {
-          debugPrint('[ActivityService] ✗ Data is null');
+          debugPrint('[ActivityService] Data is null');
           throw Exception('Data aktivitas tidak ditemukan');
         }
-        debugPrint('[ActivityService] ✓ Data received: ${data['entries']?.length ?? 0} entries');
-        final payload = ActivityPayload.fromJson(data);
-        debugPrint('[ActivityService] ✓ Parsed: today=${payload.today != null}, recent=${payload.recent.length}');
+        final Map<String, dynamic> payloadSource;
+        if (data is List) {
+          payloadSource = {'entries': data};
+        } else if (data is Map<String, dynamic>) {
+          payloadSource = data;
+        } else {
+          throw Exception('Format data aktivitas tidak valid');
+        }
+        final entriesCount = payloadSource['entries'] is List
+            ? (payloadSource['entries'] as List).length
+            : 0;
+        debugPrint('[ActivityService] Data received: $entriesCount entries');
+        final payload = ActivityPayload.fromJson(payloadSource);
+        debugPrint('[ActivityService] Parsed: today=${payload.today != null}, recent=${payload.recent.length}');
         return payload;
       }
-      debugPrint('[ActivityService] ✗ Status code: ${response.statusCode}');
+      debugPrint('[ActivityService] Status code: ${response.statusCode}');
       throw Exception('Gagal memuat data aktivitas');
     } catch (e) {
-      debugPrint('[ActivityService] ✗ Error: $e');
+      debugPrint('[ActivityService] Error: $e');
       rethrow;
     }
   }
@@ -159,7 +170,7 @@ class ActivityService {
       debugPrint('[ActivityService] Getting activity: $id');
       final response = await _apiService.get(ApiConfig.activityById(id));
       if (response.statusCode == 200) {
-        debugPrint('[ActivityService] ✓ Activity loaded');
+        debugPrint('[ActivityService] Activity loaded');
         return {
           'success': true,
           'data': response.data['data'],
@@ -167,7 +178,7 @@ class ActivityService {
       }
       throw Exception(response.data['message'] ?? 'Gagal memuat aktivitas');
     } catch (e) {
-      debugPrint('[ActivityService] ✗ Error: $e');
+      debugPrint('[ActivityService] Error: $e');
       return {
         'success': false,
         'message': e.toString().replaceAll('Exception: ', ''),
@@ -219,7 +230,7 @@ class ActivityService {
       );
 
       if (response.statusCode == 200) {
-        debugPrint('[ActivityService] ✓ Activity updated');
+        debugPrint('[ActivityService] Activity updated');
         return {
           'success': true,
           'data': response.data['data'],
@@ -229,7 +240,7 @@ class ActivityService {
         throw Exception(response.data['message'] ?? 'Gagal memperbarui aktivitas');
       }
     } catch (e) {
-      debugPrint('[ActivityService] ✗ Error: $e');
+      debugPrint('[ActivityService] Error: $e');
       return {
         'success': false,
         'message': e.toString().replaceAll('Exception: ', ''),
@@ -242,7 +253,7 @@ class ActivityService {
       debugPrint('[ActivityService] Deleting activity: $id');
       final response = await _apiService.delete(ApiConfig.activityById(id));
       if (response.statusCode == 200) {
-        debugPrint('[ActivityService] ✓ Activity deleted');
+        debugPrint('[ActivityService] Activity deleted');
         return {
           'success': true,
           'message': response.data['message'] ?? 'Aktivitas berhasil dihapus',
@@ -250,7 +261,7 @@ class ActivityService {
       }
       throw Exception(response.data['message'] ?? 'Gagal menghapus aktivitas');
     } catch (e) {
-      debugPrint('[ActivityService] ✗ Error: $e');
+      debugPrint('[ActivityService] Error: $e');
       return {
         'success': false,
         'message': e.toString().replaceAll('Exception: ', ''),
@@ -259,4 +270,3 @@ class ActivityService {
   }
 
 }
-

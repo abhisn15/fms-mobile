@@ -1,3 +1,105 @@
+import 'dart:convert';
+
+String _stringValue(dynamic value) {
+  if (value == null) return '';
+  return value.toString();
+}
+
+int _intValue(dynamic value) {
+  if (value == null) return 0;
+  if (value is int) return value;
+  if (value is num) return value.round();
+  if (value is String) return int.tryParse(value) ?? 0;
+  return 0;
+}
+
+double? _doubleValue(dynamic value) {
+  if (value == null) return null;
+  if (value is double) return value;
+  if (value is int) return value.toDouble();
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value);
+  return null;
+}
+
+List<String> _stringListValue(dynamic value) {
+  if (value == null) return [];
+  if (value is List) {
+    return value
+        .map((item) => item == null ? '' : item.toString())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+  if (value is String) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return [];
+    if ((trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+        (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is List) {
+          return decoded
+              .map((item) => item == null ? '' : item.toString())
+              .where((item) => item.isNotEmpty)
+              .toList();
+        }
+        if (decoded is String && decoded.isNotEmpty) {
+          return [decoded];
+        }
+      } catch (_) {}
+    }
+    return [trimmed];
+  }
+  return [];
+}
+
+List<dynamic>? _listValue(dynamic value) {
+  if (value == null) return null;
+  if (value is List) return value;
+  if (value is String) {
+    final trimmed = value.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is List) return decoded;
+      } catch (_) {}
+    }
+  }
+  return null;
+}
+
+String _formatDateOnly(DateTime value) {
+  final year = value.year.toString().padLeft(4, '0');
+  final month = value.month.toString().padLeft(2, '0');
+  final day = value.day.toString().padLeft(2, '0');
+  return '$year-$month-$day';
+}
+
+String _resolveDateOnlyForCompare(DailyActivity activity) {
+  final dateValue = activity.date;
+  final dateOnly = dateValue.isNotEmpty ? dateValue.split('T').first : '';
+  final createdAt = activity.createdAt.isNotEmpty ? DateTime.tryParse(activity.createdAt) : null;
+  if (createdAt == null) {
+    return dateOnly;
+  }
+  final createdLocal = createdAt.toLocal();
+  final createdDateOnly = _formatDateOnly(createdLocal);
+  if (dateOnly.isEmpty) {
+    return createdDateOnly;
+  }
+  final parsedDate = DateTime.tryParse(dateOnly);
+  if (parsedDate == null) {
+    return createdDateOnly;
+  }
+  final dateOnlyParsed = DateTime(parsedDate.year, parsedDate.month, parsedDate.day);
+  final createdOnly = DateTime(createdLocal.year, createdLocal.month, createdLocal.day);
+  final diffDays = (createdOnly.difference(dateOnlyParsed).inDays).abs();
+  if (diffDays <= 1) {
+    return createdDateOnly;
+  }
+  return dateOnly;
+}
+
 class DailyActivity {
   final String id;
   final String userId;
@@ -40,40 +142,35 @@ class DailyActivity {
   });
 
   factory DailyActivity.fromJson(Map<String, dynamic> json) {
+    final checkpointsRaw = _listValue(json['checkpoints']);
+    final parsedPhotoUrls = _stringListValue(json['photoUrls']);
+    final dateValue = _stringValue(json['date']);
+    final createdAtValue = _stringValue(json['createdAt']);
+    final summaryValue = _stringValue(json['summary']);
+    final sentimentValue = _stringValue(json['sentiment']);
+
     return DailyActivity(
       id: json['id'] as String? ?? '',
       userId: json['userId'] as String? ?? '',
-      date: json['date'] as String? ?? '',
-      summary: json['summary'] as String? ?? '',
-      sentiment: json['sentiment'] as String? ?? 'netral',
-      focusHours: json['focusHours'] as int? ?? 0,
-      blockers: (json['blockers'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList() ??
-          [],
-      highlights: (json['highlights'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList() ??
-          [],
-      plans: (json['plans'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList() ??
-          [],
+      date: dateValue,
+      summary: summaryValue,
+      sentiment: sentimentValue.isNotEmpty ? sentimentValue : 'netral',
+      focusHours: _intValue(json['focusHours']),
+      blockers: _stringListValue(json['blockers']),
+      highlights: _stringListValue(json['highlights']),
+      plans: _stringListValue(json['plans']),
       notes: json['notes'] as String?,
       locationName: json['locationName'] as String?,
-      checkpoints: json['checkpoints'] != null
-          ? (json['checkpoints'] as List<dynamic>)
-              .map((e) => SecurityCheckpoint.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : null,
-      photoUrls: json['photoUrls'] != null
-          ? (json['photoUrls'] as List<dynamic>).map((e) => e as String).toList()
-          : null,
-      latitude: json['latitude'] != null ? (json['latitude'] as num).toDouble() : null,
-      longitude: json['longitude'] != null ? (json['longitude'] as num).toDouble() : null,
-      createdAt: json['createdAt'] as String? ?? '',
+      checkpoints: checkpointsRaw
+          ?.whereType<Map<String, dynamic>>()
+          .map((e) => SecurityCheckpoint.fromJson(e))
+          .toList(),
+      photoUrls: parsedPhotoUrls.isNotEmpty ? parsedPhotoUrls : null,
+      latitude: _doubleValue(json['latitude']),
+      longitude: _doubleValue(json['longitude']),
+      createdAt: createdAtValue,
       isRead: json['isRead'] as bool?,
-      viewsCount: json['viewsCount'] != null ? (json['viewsCount'] as num).toInt() : null,
+      viewsCount: json['viewsCount'] != null ? _intValue(json['viewsCount']) : null,
     );
   }
 }
@@ -184,8 +281,8 @@ class ActivityPayload {
   factory ActivityPayload.fromJson(Map<String, dynamic> json) {
     // Backend returns { entries: [...], timeline: [...] }
     // We need to convert to { today: ..., recent: [...] }
-    final entries = (json['entries'] as List<dynamic>?) ?? [];
-    final timeline = (json['timeline'] as List<dynamic>?) ?? [];
+    final entries = _listValue(json['entries']) ?? _listValue(json['data']) ?? [];
+    final timeline = _listValue(json['timeline']) ?? [];
     
     // Use entries if available, otherwise use timeline
     final allActivities = entries.isNotEmpty ? entries : timeline;
@@ -200,9 +297,12 @@ class ActivityPayload {
     
     for (final entry in allActivities) {
       try {
-        final activity = DailyActivity.fromJson(entry as Map<String, dynamic>);
+        if (entry is! Map<String, dynamic>) {
+          continue;
+        }
+        final activity = DailyActivity.fromJson(entry);
         // Compare dates (both should be in YYYY-MM-DD format)
-        final activityDate = activity.date.split('T')[0]; // Remove time if present
+        final activityDate = _resolveDateOnlyForCompare(activity);
         if (activityDate == todayDate) {
           todayActivity = activity;
         } else {

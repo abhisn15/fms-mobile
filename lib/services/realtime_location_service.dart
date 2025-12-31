@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart' as geolocator;
+import 'package:permission_handler/permission_handler.dart';
 import '../config/api_config.dart';
 import '../models/user_model.dart';
 import 'api_service.dart';
@@ -47,16 +48,61 @@ class RealtimeLocationService {
   geolocator.LocationSettings _buildLocationSettings() {
     final distanceFilter = MOVEMENT_THRESHOLD_METERS.round();
     if (defaultTargetPlatform == TargetPlatform.android) {
+      final notificationConfig = geolocator.ForegroundNotificationConfig(
+        notificationTitle: 'Atenim - Tracking Absensi',
+        notificationText: 'Pelacakan lokasi absensi aktif di latar belakang.',
+        notificationChannelName: 'Atenim Tracking',
+        setOngoing: true,
+        enableWakeLock: true,
+      );
       return geolocator.AndroidSettings(
         accuracy: geolocator.LocationAccuracy.high,
         distanceFilter: distanceFilter,
         intervalDuration: Duration(seconds: _intervalSeconds),
+        foregroundNotificationConfig: notificationConfig,
       );
     }
     return geolocator.LocationSettings(
       accuracy: geolocator.LocationAccuracy.high,
       distanceFilter: distanceFilter,
     );
+  }
+
+  Future<void> _ensureNotificationPermission() async {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+
+    final status = await Permission.notification.status;
+    if (status.isGranted) {
+      return;
+    }
+
+    final result = await Permission.notification.request();
+    if (!result.isGranted) {
+      debugPrint('[RealtimeLocationService] Notification permission denied; foreground tracking may be limited.');
+    }
+  }
+
+  Future<void> _ensureBackgroundLocationPermission() async {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+
+    final alwaysStatus = await Permission.locationAlways.status;
+    if (alwaysStatus.isGranted) {
+      return;
+    }
+
+    final locationStatus = await Permission.location.status;
+    if (!locationStatus.isGranted) {
+      await Permission.location.request();
+    }
+
+    final result = await Permission.locationAlways.request();
+    if (!result.isGranted) {
+      debugPrint('[RealtimeLocationService] Background location permission denied; tracking may pause in background.');
+    }
   }
 
   void _startPositionStream() {
@@ -129,6 +175,8 @@ class RealtimeLocationService {
     debugPrint('[RealtimeLocationService] Movement threshold: $MOVEMENT_THRESHOLD_METERS meters');
 
     try {
+      await _ensureNotificationPermission();
+      await _ensureBackgroundLocationPermission();
       if (_isTracking) {
         debugPrint('[RealtimeLocationService] Already tracking, stopping first...');
         await stopRealtimeTracking();

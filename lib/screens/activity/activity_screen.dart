@@ -30,6 +30,26 @@ class _ActivityScreenState extends State<ActivityScreen> {
     return DateTime.now();
   }
 
+  DateTime? _parseActivityDate(DailyActivity activity) {
+    final parsedDate = DateTime.tryParse(activity.date);
+    final createdAt = activity.createdAt.isNotEmpty
+        ? DateTime.tryParse(activity.createdAt)?.toLocal()
+        : null;
+    if (parsedDate == null) {
+      return createdAt;
+    }
+    if (createdAt == null) {
+      return parsedDate;
+    }
+    final dateOnly = DateTime(parsedDate.year, parsedDate.month, parsedDate.day);
+    final createdOnly = DateTime(createdAt.year, createdAt.month, createdAt.day);
+    final diffDays = (createdOnly.difference(dateOnly).inDays).abs();
+    if (diffDays <= 1) {
+      return createdAt;
+    }
+    return parsedDate;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -195,7 +215,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 // Filter by date range
                 final allFilteredActivities = allActivities.where((activity) {
                   try {
-                    final activityDate = DateTime.parse(activity.date);
+                    final activityDate = _parseActivityDate(activity);
+                    if (activityDate == null) {
+                      return true;
+                    }
                     final activityDateOnly = DateTime(activityDate.year, activityDate.month, activityDate.day);
                     return activityDateOnly.isAfter(startDateOnly.subtract(const Duration(days: 1))) && 
                            activityDateOnly.isBefore(endDateOnly);
@@ -351,6 +374,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
 
   Widget _buildActivityCard(BuildContext context, DailyActivity activity, {bool isToday = false}) {
+    final activityDate = _parseActivityDate(activity);
+    final activityDateLabel = activityDate != null
+        ? DateFormat('dd MMMM yyyy').format(activityDate)
+        : (activity.date.isNotEmpty ? activity.date : 'Tanggal tidak tersedia');
     return Card(
       color: isToday ? Colors.blue[50] : null,
       child: ExpansionTile(
@@ -384,7 +411,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
           children: [
             Expanded(
               child: Text(
-                DateFormat('dd MMMM yyyy').format(DateTime.parse(activity.date)),
+                activityDateLabel,
                 style: TextStyle(
                   fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
                 ),

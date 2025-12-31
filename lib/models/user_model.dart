@@ -145,11 +145,17 @@ class Site {
   final String id;
   final String siteId;
   final String name;
+  final double? latitude;
+  final double? longitude;
+  final int? maxRadiusMeters;
 
   Site({
     required this.id,
     required this.siteId,
     required this.name,
+    this.latitude,
+    this.longitude,
+    this.maxRadiusMeters,
   });
 
   factory Site.fromJson(Map<String, dynamic> json) {
@@ -157,6 +163,9 @@ class Site {
       id: json['id'] as String? ?? '',
       siteId: json['siteId'] as String? ?? '',
       name: json['name'] as String? ?? '',
+      latitude: json['latitude'] != null ? (json['latitude'] as num).toDouble() : null,
+      longitude: json['longitude'] != null ? (json['longitude'] as num).toDouble() : null,
+      maxRadiusMeters: json['maxRadiusMeters'] != null ? (json['maxRadiusMeters'] as num).toInt() : null,
     );
   }
 
@@ -165,6 +174,9 @@ class Site {
       'id': id,
       'siteId': siteId,
       'name': name,
+      'latitude': latitude,
+      'longitude': longitude,
+      'maxRadiusMeters': maxRadiusMeters,
     };
   }
 }

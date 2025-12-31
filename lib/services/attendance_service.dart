@@ -4,12 +4,44 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import '../config/api_config.dart';
 import '../models/attendance_model.dart';
+import '../models/user_model.dart' show Site;
 import '../models/shift_model.dart';
 import '../utils/error_handler.dart';
 import 'api_service.dart';
 
 class AttendanceService {
   final ApiService _apiService = ApiService();
+
+  void _validateGeofence({
+    required Site? site,
+    required double? latitude,
+    required double? longitude,
+    required String actionLabel,
+  }) {
+    final siteLat = site?.latitude;
+    final siteLng = site?.longitude;
+    final maxRadiusMeters = site?.maxRadiusMeters;
+    if (siteLat == null || siteLng == null || maxRadiusMeters == null) {
+      return;
+    }
+    final placementName = site?.name?.trim();
+    final locationLabel = (placementName != null && placementName.isNotEmpty)
+        ? placementName
+        : 'lokasi penempatan';
+    final requirementLabel = 'dalam radius ${maxRadiusMeters}m dari $locationLabel';
+    if (latitude == null || longitude == null) {
+      throw Exception(
+        'GPS wajib aktif untuk $actionLabel. Pastikan berada $requirementLabel.',
+      );
+    }
+    final distance = Geolocator.distanceBetween(siteLat, siteLng, latitude, longitude);
+    if (distance > maxRadiusMeters.toDouble()) {
+      throw Exception(
+        'Lokasi di luar radius (${distance.round()}m > ${maxRadiusMeters}m) dari $locationLabel. '
+        'Pindah ke area penempatan untuk $actionLabel.',
+      );
+    }
+  }
 
   Future<AttendancePayload> getAttendance({DateTime? startDate, DateTime? endDate}) async {
     debugPrint('[AttendanceService] Loading attendance data...');
@@ -86,6 +118,7 @@ class AttendanceService {
     String? shiftId, // Opsional - jika tidak ada, gunakan shift yang di-assign atau absen tanpa shift
     double? latitude,
     double? longitude,
+    Site? site,
   }) async {
     debugPrint('[AttendanceService] Starting check-in...');
     debugPrint('[AttendanceService] Shift ID: ${shiftId ?? "null (no shift)"}');
@@ -148,6 +181,13 @@ class AttendanceService {
       } else {
         debugPrint('[AttendanceService] Using provided GPS: $latitude, $longitude');
       }
+
+      _validateGeofence(
+        site: site,
+        latitude: latitude,
+        longitude: longitude,
+        actionLabel: 'check-in',
+      );
 
       // Validasi file sebelum upload untuk mencegah OOM di device low-end
       try {
@@ -250,6 +290,7 @@ class AttendanceService {
     required File photo,
     double? latitude,
     double? longitude,
+    Site? site,
   }) async {
     debugPrint('[AttendanceService] Starting check-out...');
     debugPrint('[AttendanceService] Photo path: ${photo.path}');
@@ -311,6 +352,13 @@ class AttendanceService {
       } else {
         debugPrint('[AttendanceService] Using provided GPS: $latitude, $longitude');
       }
+
+      _validateGeofence(
+        site: site,
+        latitude: latitude,
+        longitude: longitude,
+        actionLabel: 'check-out',
+      );
 
       // Validasi file sebelum upload untuk mencegah OOM di device low-end
       try {
