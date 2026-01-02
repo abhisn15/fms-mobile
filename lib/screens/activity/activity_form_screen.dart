@@ -28,7 +28,10 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
   void initState() {
     super.initState();
     if (widget.activityId != null) {
-      _loadActivity();
+      // Delay loading to avoid calling during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadActivity();
+      });
     }
   }
 
@@ -72,7 +75,10 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
     final photo = await Navigator.push<File>(
       context,
       MaterialPageRoute(
-        builder: (_) => const CameraScreen(title: 'Ambil Foto Aktivitas'),
+        builder: (_) => const CameraScreen(
+          title: 'Ambil Foto Aktivitas',
+          preferLowResolution: true,
+        ),
       ),
     );
 
@@ -160,11 +166,13 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
 
     if (mounted) {
       if (success) {
+        final successMessage = activityProvider.successMessage;
         ToastHelper.showSuccess(
           context,
-          widget.activityId != null 
-              ? 'Aktivitas berhasil diperbarui' 
-              : 'Aktivitas berhasil disimpan',
+          successMessage ??
+              (widget.activityId != null
+                  ? 'Aktivitas berhasil diperbarui'
+                  : 'Aktivitas berhasil disimpan'),
         );
         Navigator.of(context).pop(true);
       } else {

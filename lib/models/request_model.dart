@@ -7,6 +7,7 @@ class LeaveRequest {
   final String startDate;
   final String endDate;
   final String? reviewerId;
+  final List<String>? photoUrls; // Array of photo URLs for proof (sick leave, etc.)
   final String createdAt;
   final String updatedAt;
 
@@ -19,6 +20,7 @@ class LeaveRequest {
     required this.startDate,
     required this.endDate,
     this.reviewerId,
+    this.photoUrls,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -45,6 +47,15 @@ class LeaveRequest {
       return dateValue.toString();
     }
     
+    // Parse photoUrls
+    List<String>? parsePhotoUrls(dynamic photoUrlsValue) {
+      if (photoUrlsValue == null) return null;
+      if (photoUrlsValue is List) {
+        return photoUrlsValue.map((e) => e.toString()).toList();
+      }
+      return null;
+    }
+
     return LeaveRequest(
       id: json['id']?.toString() ?? '',
       userId: json['userId']?.toString() ?? '',
@@ -54,6 +65,7 @@ class LeaveRequest {
       startDate: parseDate(json['startDate']),
       endDate: parseDate(json['endDate']),
       reviewerId: json['reviewerId']?.toString(),
+      photoUrls: parsePhotoUrls(json['photoUrls']),
       createdAt: parseIsoDate(json['createdAt']),
       updatedAt: parseIsoDate(json['updatedAt']),
     );

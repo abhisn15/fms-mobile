@@ -11,7 +11,9 @@ class OfflineStorageService {
   static const String _pendingCheckInKey = 'pending_checkin';
   static const String _pendingCheckOutKey = 'pending_checkout';
   static const String _pendingActivitiesKey = 'pending_activities';
+  static const String _pendingPatroliKey = 'pending_patroli';
   static const String _pendingRequestsKey = 'pending_requests';
+  static const String _pendingLocationLogsKey = 'pending_location_logs';
 
   /// Simpan attendance data
   Future<void> saveAttendance(Map<String, dynamic> data) async {
@@ -258,6 +260,100 @@ class OfflineStorageService {
     }
   }
 
+  /// Simpan pending patroli (terpisah dari daily activities)
+  Future<void> savePendingPatroli(Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = await getPendingPatroli();
+      pending.add({
+        ...data,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      await prefs.setString(_pendingPatroliKey, jsonEncode(pending));
+      debugPrint('[OfflineStorage] Pending patroli saved');
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error saving pending patroli: $e');
+    }
+  }
+
+  /// Ambil semua pending patroli
+  Future<List<Map<String, dynamic>>> getPendingPatroli() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = prefs.getString(_pendingPatroliKey);
+      if (data != null) {
+        final list = jsonDecode(data) as List;
+        return list.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error getting pending patroli: $e');
+      return [];
+    }
+  }
+
+  /// Hapus pending patroli setelah berhasil sync
+  Future<void> removePendingPatroli(int index) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = await getPendingPatroli();
+      if (index >= 0 && index < pending.length) {
+        pending.removeAt(index);
+        await prefs.setString(_pendingPatroliKey, jsonEncode(pending));
+        debugPrint('[OfflineStorage] Pending patroli removed');
+      }
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error removing pending patroli: $e');
+    }
+  }
+
+  /// Simpan pending location log
+  Future<void> savePendingLocationLog(Map<String, dynamic> data) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = await getPendingLocationLogs();
+      pending.add({
+        ...data,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+      await prefs.setString(_pendingLocationLogsKey, jsonEncode(pending));
+      debugPrint('[OfflineStorage] Pending location log saved');
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error saving pending location log: $e');
+    }
+  }
+
+  /// Ambil semua pending location logs
+  Future<List<Map<String, dynamic>>> getPendingLocationLogs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final data = prefs.getString(_pendingLocationLogsKey);
+      if (data != null) {
+        final list = jsonDecode(data) as List;
+        return list.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error getting pending location logs: $e');
+      return [];
+    }
+  }
+
+  /// Hapus pending location log setelah berhasil sync
+  Future<void> removePendingLocationLog(int index) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pending = await getPendingLocationLogs();
+      if (index >= 0 && index < pending.length) {
+        pending.removeAt(index);
+        await prefs.setString(_pendingLocationLogsKey, jsonEncode(pending));
+        debugPrint('[OfflineStorage] Pending location log removed');
+      }
+    } catch (e) {
+      debugPrint('[OfflineStorage] Error removing pending location log: $e');
+    }
+  }
+
   /// Clear semua data offline
   Future<void> clearAll() async {
     try {
@@ -269,7 +365,9 @@ class OfflineStorageService {
       await prefs.remove(_pendingCheckInKey);
       await prefs.remove(_pendingCheckOutKey);
       await prefs.remove(_pendingActivitiesKey);
+      await prefs.remove(_pendingPatroliKey);
       await prefs.remove(_pendingRequestsKey);
+      await prefs.remove(_pendingLocationLogsKey);
       debugPrint('[OfflineStorage] All offline data cleared');
     } catch (e) {
       debugPrint('[OfflineStorage] Error clearing data: $e');

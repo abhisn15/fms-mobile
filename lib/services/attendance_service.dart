@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -40,6 +41,47 @@ class AttendanceService {
         'Lokasi di luar radius (${distance.round()}m > ${maxRadiusMeters}m) dari $locationLabel. '
         'Pindah ke area penempatan untuk $actionLabel.',
       );
+    }
+  }
+
+  Future<Map<String, double>> getRequiredLocation({required String actionLabel}) async {
+    debugPrint('[AttendanceService] Checking location permission...');
+    var permission = await Geolocator.checkPermission();
+
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied) {
+      throw Exception('Izin lokasi ditolak. Aktifkan GPS untuk $actionLabel.');
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      await Geolocator.openAppSettings();
+      throw Exception('Izin lokasi ditolak permanen. Aktifkan dari pengaturan untuk $actionLabel.');
+    }
+
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      await Geolocator.openLocationSettings();
+      throw Exception('GPS belum aktif. Aktifkan lokasi untuk $actionLabel.');
+    }
+
+    debugPrint('[AttendanceService] Getting GPS location...');
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 15),
+      );
+      debugPrint('[AttendanceService] ✓ GPS obtained: ${position.latitude}, ${position.longitude}');
+      return {
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+      };
+    } on TimeoutException {
+      throw Exception('Gagal mendapatkan lokasi GPS. Pastikan sinyal GPS bagus lalu coba lagi.');
+    } catch (e) {
+      throw Exception('Gagal mendapatkan lokasi GPS. ${e.toString()}');
     }
   }
 
@@ -124,60 +166,10 @@ class AttendanceService {
     debugPrint('[AttendanceService] Shift ID: ${shiftId ?? "null (no shift)"}');
     debugPrint('[AttendanceService] Photo path: ${photo.path}');
     try {
-      // Ambil GPS jika belum ada
-      Position? position;
       if (latitude == null || longitude == null) {
-        try {
-          debugPrint('[AttendanceService] Checking location permission...');
-          // Check permission status
-          LocationPermission permission = await Geolocator.checkPermission();
-          
-          if (permission == LocationPermission.denied) {
-            debugPrint('[AttendanceService] Permission denied, requesting...');
-            permission = await Geolocator.requestPermission();
-            
-            if (permission == LocationPermission.denied) {
-              debugPrint('[AttendanceService] Permission denied by user');
-              // GPS opsional, lanjutkan tanpa koordinat
-            } else if (permission == LocationPermission.deniedForever) {
-              debugPrint('[AttendanceService] Permission denied forever, skipping GPS');
-              // GPS opsional, lanjutkan tanpa koordinat
-            }
-          }
-          
-          if (permission == LocationPermission.whileInUse || 
-              permission == LocationPermission.always) {
-            debugPrint('[AttendanceService] Permission granted, getting GPS location...');
-            // Check if location services are enabled
-            bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-            if (!serviceEnabled) {
-              debugPrint('[AttendanceService] Location services disabled');
-              // GPS opsional, lanjutkan tanpa koordinat
-            } else {
-              try {
-                position = await Geolocator.getCurrentPosition(
-                  desiredAccuracy: LocationAccuracy.high,
-                  timeLimit: const Duration(seconds: 15), // Increased timeout
-                );
-                latitude = position.latitude;
-                longitude = position.longitude;
-                debugPrint('[AttendanceService] ✓ GPS obtained: $latitude, $longitude');
-              } catch (timeoutError) {
-                if (timeoutError.toString().contains('TimeoutException')) {
-                  debugPrint('[AttendanceService] ⚠ GPS timeout (15s) - continuing without GPS (optional)');
-                } else {
-                  debugPrint('[AttendanceService] ⚠ GPS error: $timeoutError - continuing without GPS (optional)');
-                }
-                // GPS opsional, lanjutkan tanpa koordinat
-              }
-            }
-          } else {
-            debugPrint('[AttendanceService] Permission not granted, skipping GPS');
-          }
-        } catch (e) {
-          debugPrint('[AttendanceService] ⚠ GPS error (optional): $e - continuing without GPS');
-          // GPS opsional, lanjutkan tanpa koordinat
-        }
+        final location = await getRequiredLocation(actionLabel: 'check-in');
+        latitude = location['latitude'];
+        longitude = location['longitude'];
       } else {
         debugPrint('[AttendanceService] Using provided GPS: $latitude, $longitude');
       }
@@ -295,60 +287,10 @@ class AttendanceService {
     debugPrint('[AttendanceService] Starting check-out...');
     debugPrint('[AttendanceService] Photo path: ${photo.path}');
     try {
-      // Ambil GPS jika belum ada
-      Position? position;
       if (latitude == null || longitude == null) {
-        try {
-          debugPrint('[AttendanceService] Checking location permission...');
-          // Check permission status
-          LocationPermission permission = await Geolocator.checkPermission();
-          
-          if (permission == LocationPermission.denied) {
-            debugPrint('[AttendanceService] Permission denied, requesting...');
-            permission = await Geolocator.requestPermission();
-            
-            if (permission == LocationPermission.denied) {
-              debugPrint('[AttendanceService] Permission denied by user');
-              // GPS opsional, lanjutkan tanpa koordinat
-            } else if (permission == LocationPermission.deniedForever) {
-              debugPrint('[AttendanceService] Permission denied forever, skipping GPS');
-              // GPS opsional, lanjutkan tanpa koordinat
-            }
-          }
-          
-          if (permission == LocationPermission.whileInUse || 
-              permission == LocationPermission.always) {
-            debugPrint('[AttendanceService] Permission granted, getting GPS location...');
-            // Check if location services are enabled
-            bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-            if (!serviceEnabled) {
-              debugPrint('[AttendanceService] Location services disabled');
-              // GPS opsional, lanjutkan tanpa koordinat
-            } else {
-              try {
-                position = await Geolocator.getCurrentPosition(
-                  desiredAccuracy: LocationAccuracy.high,
-                  timeLimit: const Duration(seconds: 15), // Increased timeout
-                );
-                latitude = position.latitude;
-                longitude = position.longitude;
-                debugPrint('[AttendanceService] ✓ GPS obtained: $latitude, $longitude');
-              } catch (timeoutError) {
-                if (timeoutError.toString().contains('TimeoutException')) {
-                  debugPrint('[AttendanceService] ⚠ GPS timeout (15s) - continuing without GPS (optional)');
-                } else {
-                  debugPrint('[AttendanceService] ⚠ GPS error: $timeoutError - continuing without GPS (optional)');
-                }
-                // GPS opsional, lanjutkan tanpa koordinat
-              }
-            }
-          } else {
-            debugPrint('[AttendanceService] Permission not granted, skipping GPS');
-          }
-        } catch (e) {
-          debugPrint('[AttendanceService] ⚠ GPS error (optional): $e - continuing without GPS');
-          // GPS opsional, lanjutkan tanpa koordinat
-        }
+        final location = await getRequiredLocation(actionLabel: 'check-out');
+        latitude = location['latitude'];
+        longitude = location['longitude'];
       } else {
         debugPrint('[AttendanceService] Using provided GPS: $latitude, $longitude');
       }

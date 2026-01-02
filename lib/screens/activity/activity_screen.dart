@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/activity_provider.dart';
@@ -15,6 +17,11 @@ class ActivityScreen extends StatefulWidget {
 }
 
 class _ActivityScreenState extends State<ActivityScreen> {
+  // Helper untuk membedakan daily activity dan patroli
+  bool _isPatroli(DailyActivity activity) {
+    // Use the model's computed isPatroli property
+    return activity.isPatroli;
+  }
   // Default: bulan ini (tanggal 1 sampai hari ini)
   late DateTime _startDate = _getDefaultStartDate();
   late DateTime _endDate = _getDefaultEndDate();
@@ -48,6 +55,21 @@ class _ActivityScreenState extends State<ActivityScreen> {
       return createdAt;
     }
     return parsedDate;
+  }
+
+  bool _isLocalPhotoUrl(String url) {
+    return url.startsWith('file://');
+  }
+
+  String _resolveLocalPath(String url) {
+    if (!url.startsWith('file://')) {
+      return url;
+    }
+    try {
+      return Uri.parse(url).toFilePath();
+    } catch (_) {
+      return url.replaceFirst('file://', '');
+    }
   }
 
   @override
@@ -170,6 +192,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
           Expanded(
             child: Consumer<ActivityProvider>(
               builder: (context, activityProvider, _) {
+                debugPrint('[ActivityScreen] Consumer rebuilding - isLoading: ${activityProvider.isLoading}, error: ${activityProvider.error}');
                 if (activityProvider.isLoading) {
                   return const Center(child: CircularProgressIndicator());
                 }
@@ -200,20 +223,27 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
                 final recent = activityProvider.recentActivities;
                 final today = activityProvider.todayActivity;
+                debugPrint('[ActivityScreen] Provider data - today: ${today?.summary}, recent: ${recent.length}');
 
                 // Filter aktivitas berdasarkan tanggal
                 final startDateOnly = DateTime(_startDate.year, _startDate.month, _startDate.day);
                 final endDateOnly = DateTime(_endDate.year, _endDate.month, _endDate.day).add(const Duration(days: 1));
                 
-                // Combine all activities first
+                // Combine all activities first (pending activities already merged in ActivityProvider)
                 final allActivities = <DailyActivity>[];
                 if (today != null) {
                   allActivities.add(today);
+                  debugPrint('[ActivityScreen] Today activity: ${today.summary}, type: ${today.type}, isPatroli: ${today.isPatroli}');
                 }
                 allActivities.addAll(recent);
+
+                // Filter: hanya tampilkan daily activity (bukan patroli)
+                final dailyActivitiesOnly = allActivities.where((activity) => !_isPatroli(activity)).toList();
+                debugPrint('[ActivityScreen] Total activities: ${allActivities.length}, Daily activities: ${dailyActivitiesOnly.length}');
+                debugPrint('[ActivityScreen] Filtered ${allActivities.length} total activities to ${dailyActivitiesOnly.length} daily activities');
                 
                 // Filter by date range
-                final allFilteredActivities = allActivities.where((activity) {
+                final allFilteredActivities = dailyActivitiesOnly.where((activity) {
                   try {
                     final activityDate = _parseActivityDate(activity);
                     if (activityDate == null) {
@@ -417,6 +447,29 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 ),
               ),
             ),
+            if (activity.isLocal)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange[100],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.schedule, size: 10, color: Colors.orange[800]),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Pending - Tunggu Koneksi',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange[800],
+                  ),
+                    ),
+                  ],
+                ),
+              ),
             if (activity.isRead == true && activity.viewsCount != null && activity.viewsCount! > 0)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -447,75 +500,77 @@ class _ActivityScreenState extends State<ActivityScreen> {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: PopupMenuButton<String>(
-          icon: const Icon(Icons.more_vert),
-          onSelected: (value) async {
-            if (value == 'edit') {
-              final result = await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ActivityFormScreen(activityId: activity.id),
-                ),
-              );
-              if (result == true && mounted) {
-                Provider.of<ActivityProvider>(context, listen: false).loadActivities();
-              }
-            } else if (value == 'delete') {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Hapus Aktivitas'),
-                  content: const Text('Apakah Anda yakin ingin menghapus aktivitas ini?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Batal'),
+        trailing: activity.isLocal
+            ? const SizedBox.shrink()
+            : PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                onSelected: (value) async {
+                  if (value == 'edit') {
+                    final result = await Navigator.push<bool>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ActivityFormScreen(activityId: activity.id),
+                      ),
+                    );
+                    if (result == true && mounted) {
+                      Provider.of<ActivityProvider>(context, listen: false).loadActivities();
+                    }
+                  } else if (value == 'delete') {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Hapus Aktivitas'),
+                        content: const Text('Apakah Anda yakin ingin menghapus aktivitas ini?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Batal'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            style: TextButton.styleFrom(foregroundColor: Colors.red),
+                            child: const Text('Hapus'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm == true && mounted) {
+                      final provider = Provider.of<ActivityProvider>(context, listen: false);
+                      final success = await provider.deleteActivity(activity.id);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(success ? 'Aktivitas berhasil dihapus' : provider.error ?? 'Gagal menghapus aktivitas'),
+                            backgroundColor: success ? Colors.green : Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit, size: 20),
+                        SizedBox(width: 8),
+                        Text('Edit'),
+                      ],
                     ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      style: TextButton.styleFrom(foregroundColor: Colors.red),
-                      child: const Text('Hapus'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete, size: 20, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('Hapus', style: TextStyle(color: Colors.red)),
+                      ],
                     ),
-                  ],
-                ),
-              );
-              if (confirm == true && mounted) {
-                final provider = Provider.of<ActivityProvider>(context, listen: false);
-                final success = await provider.deleteActivity(activity.id);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(success ? 'Aktivitas berhasil dihapus' : provider.error ?? 'Gagal menghapus aktivitas'),
-                      backgroundColor: success ? Colors.green : Colors.red,
-                    ),
-                  );
-                }
-              }
-            }
-          },
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'edit',
-              child: Row(
-                children: [
-                  Icon(Icons.edit, size: 20),
-                  SizedBox(width: 8),
-                  Text('Edit'),
+                  ),
                 ],
               ),
-            ),
-            const PopupMenuItem(
-              value: 'delete',
-              child: Row(
-                children: [
-                  Icon(Icons.delete, size: 20, color: Colors.red),
-                  SizedBox(width: 8),
-                  Text('Hapus', style: TextStyle(color: Colors.red)),
-                ],
-              ),
-            ),
-          ],
-        ),
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
@@ -534,15 +589,21 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: activity.photoUrls!.map((url) {
-                      final fullUrl = ApiConfig.getImageUrl(url);
+                      final isLocal = _isLocalPhotoUrl(url);
+                      final localPath = isLocal ? _resolveLocalPath(url) : null;
+                      final fullUrl = isLocal ? null : ApiConfig.getImageUrl(url);
                       return GestureDetector(
                         onTap: () {
                           // Show full screen image dengan aspect ratio yang benar
                           showDialog(
                             context: context,
-                            builder: (context) => FullScreenImageDialog.network(
-                              imageUrl: fullUrl,
-                            ),
+                            builder: (context) => isLocal
+                                ? FullScreenImageDialog.file(
+                                    imageFile: File(localPath!),
+                                  )
+                                : FullScreenImageDialog.network(
+                                    imageUrl: fullUrl!,
+                                  ),
                           );
                         },
                         child: ClipRRect(
@@ -550,36 +611,50 @@ class _ActivityScreenState extends State<ActivityScreen> {
                           child: Container(
                             width: 120,
                             height: 160, // 120 * 4/3 untuk portrait (lebih tinggi)
-                            child: Image.network(
-                              fullUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Container(
-                                  color: Colors.grey[200],
-                                  child: Icon(
-                                    Icons.broken_image,
-                                    color: Colors.grey[400],
+                            child: isLocal
+                                ? Image.file(
+                                    File(localPath!),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        color: Colors.grey[200],
+                                        child: Icon(
+                                          Icons.broken_image,
+                                          color: Colors.grey[400],
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : Image.network(
+                                    fullUrl!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        color: Colors.grey[200],
+                                        child: Icon(
+                                          Icons.broken_image,
+                                          color: Colors.grey[400],
+                                        ),
+                                      );
+                                    },
+                                    loadingBuilder: (context, child, loadingProgress) {
+                                      if (loadingProgress == null) return child;
+                                      return Container(
+                                        color: Colors.grey[200],
+                                        child: const Center(
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      );
+                                    },
+                                    frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                                      if (wasSynchronouslyLoaded) return child;
+                                      return AnimatedOpacity(
+                                        opacity: frame == null ? 0 : 1,
+                                        duration: const Duration(milliseconds: 200),
+                                        child: child,
+                                      );
+                                    },
                                   ),
-                                );
-                              },
-                              loadingBuilder: (context, child, loadingProgress) {
-                                if (loadingProgress == null) return child;
-                                return Container(
-                                  color: Colors.grey[200],
-                                  child: const Center(
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  ),
-                                );
-                              },
-                              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                                if (wasSynchronouslyLoaded) return child;
-                                return AnimatedOpacity(
-                                  opacity: frame == null ? 0 : 1,
-                                  duration: const Duration(milliseconds: 200),
-                                  child: child,
-                                );
-                              },
-                            ),
                           ),
                         ),
                       );

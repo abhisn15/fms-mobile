@@ -30,6 +30,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _isCameraReady = false;
   bool _isDisposing = false;
   bool _isInitializing = false;
+  bool _deferDispose = false;
   bool _hasPermission = false;
   String? _errorMessage;
 
@@ -55,6 +56,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
 
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      if (_isCapturing || (_controller?.value.isTakingPicture ?? false)) {
+        _deferDispose = true;
+        return;
+      }
       _disposeCamera();
     } else if (state == AppLifecycleState.resumed) {
       // Only reinitialize if we had permission before
@@ -267,7 +272,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _switchCamera() async {
-    if (_cameras == null || _cameras!.length < 2 || _isInitializing || _isDisposing || !mounted) {
+    if (_cameras == null ||
+        _cameras!.length < 2 ||
+        _isInitializing ||
+        _isDisposing ||
+        _isCapturing ||
+        (_controller?.value.isTakingPicture ?? false) ||
+        !mounted) {
       return;
     }
 
@@ -397,6 +408,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         !mounted) {
       return;
     }
+    if (_controller!.value.isTakingPicture) {
+      return;
+    }
 
     if (mounted) {
       setState(() => _isCapturing = true);
@@ -443,6 +457,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           ),
         );
       }
+      if (_deferDispose) {
+        await _disposeCamera();
+      }
     }
   }
 
@@ -487,6 +504,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     if (_isDisposing) {
       return;
     }
+    if (_controller?.value.isTakingPicture ?? false) {
+      _deferDispose = true;
+      return;
+    }
 
     _isDisposing = true;
     _isInitializing = false;
@@ -518,6 +539,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     } catch (e) {
       debugPrint('Error in disposeCamera: $e');
     } finally {
+      _deferDispose = false;
       if (mounted) {
         setState(() {
           _isCameraReady = false;

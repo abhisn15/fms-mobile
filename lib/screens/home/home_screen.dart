@@ -4,8 +4,10 @@ import '../attendance/attendance_screen.dart';
 import '../activity/activity_screen.dart';
 import '../requests/requests_screen.dart';
 import '../patroli/patroli_screen.dart';
+import '../settings/settings_screen.dart';
 import '../../widgets/offline_indicator.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/global_update_checker.dart';
 import 'home_tab.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -31,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (showPatroli) {
       screens.add(const PatroliScreen());
     }
+    screens.add(const SettingsScreen()); // Always add settings
     return screens;
   }
 
@@ -70,6 +73,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         label: 'Patroli',
       ));
     }
+    // Always add settings at the end
+    items.add(_NavItemData(
+      index: showPatroli ? 5 : 4,
+      icon: Icons.settings_outlined,
+      selectedIcon: Icons.settings,
+      label: 'Pengaturan',
+    ));
     return items;
   }
 
@@ -102,7 +112,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Start global update checker when screen is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      GlobalUpdateChecker.startAutoCheck(context);
+    });
+  }
+
+  @override
   void dispose() {
+    GlobalUpdateChecker.stopAutoCheck();
     _pageController?.dispose();
     if (_animationControllers != null) {
       for (var controller in _animationControllers!) {

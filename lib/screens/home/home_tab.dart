@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:geolocator/geolocator.dart' as geolocator;
 import '../../providers/attendance_provider.dart';
 import '../../providers/shift_provider.dart';
 import '../../providers/request_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/activity_provider.dart';
 import '../../providers/connectivity_provider.dart';
 import '../../models/shift_model.dart';
 import '../../models/attendance_model.dart';
@@ -32,6 +34,8 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   DateTime? _checkInDateTime; // Store parsed check-in datetime
   final ValueNotifier<String> _durationNotifier = ValueNotifier<String>('00 : 00 : 00');
   bool _isDisposed = false;
+  bool _gpsCheckInProgress = false;
+  bool _gpsPrompted = false;
 
   @override
   void initState() {
@@ -45,9 +49,15 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
       final connectivityProvider = Provider.of<ConnectivityProvider>(context, listen: false);
       attendanceProvider.setConnectivityProvider(connectivityProvider);
+      Provider.of<ActivityProvider>(context, listen: false).setConnectivityProvider(connectivityProvider);
+      attendanceProvider.syncPendingAttendance();
+      Provider.of<ActivityProvider>(context, listen: false).syncPendingActivities();
       
-      // Refresh user data to ensure it's up to date
-      Provider.of<AuthProvider>(context, listen: false).refreshUser();
+      // Only refresh user data if we don't have it yet
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      if (authProvider.user == null) {
+        authProvider.refreshUser();
+      }
       // Load attendance dengan default bulan ini
       // Load dari cache dulu untuk instant display, lalu refresh dari API
       final now = DateTime.now();
@@ -79,6 +89,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       
       Provider.of<ShiftProvider>(context, listen: false).loadShifts();
       Provider.of<RequestProvider>(context, listen: false).loadRequests();
+      _ensureGpsActive(promptSettings: false);
     });
   }
 
@@ -100,6 +111,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     // Saat app kembali ke foreground, hitung durasi langsung dari database (tidak perlu timer di background)
     if (state == AppLifecycleState.resumed) {
       debugPrint('[HomeTab] App resumed - calculating duration from database');
+      _ensureGpsActive(promptSettings: false);
       final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
       final today = attendanceProvider.todayAttendance;
       
@@ -142,6 +154,63 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       // Timer tidak perlu berjalan di background karena durasi akan dihitung ulang saat app resume
       debugPrint('[HomeTab] App paused/inactive - stopping timer to save battery');
       _durationTimer?.cancel();
+    }
+  }
+
+  Future<bool> _ensureGpsActive({required bool promptSettings}) async {
+    if (_gpsCheckInProgress) {
+      return false;
+    }
+    _gpsCheckInProgress = true;
+
+    try {
+      var permission = await geolocator.Geolocator.checkPermission();
+      if (permission == geolocator.LocationPermission.denied) {
+        permission = await geolocator.Geolocator.requestPermission();
+      }
+
+      if (permission == geolocator.LocationPermission.denied) {
+        if (mounted) {
+          ToastHelper.showWarning(
+            context,
+            'Izin lokasi ditolak. Aktifkan GPS untuk absensi.',
+          );
+        }
+        return false;
+      }
+
+      if (permission == geolocator.LocationPermission.deniedForever) {
+        if (promptSettings && !_gpsPrompted) {
+          _gpsPrompted = true;
+          await geolocator.Geolocator.openAppSettings();
+        }
+        if (mounted) {
+          ToastHelper.showWarning(
+            context,
+            'Izin lokasi ditolak permanen. Aktifkan dari pengaturan.',
+          );
+        }
+        return false;
+      }
+
+      final serviceEnabled = await geolocator.Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (promptSettings && !_gpsPrompted) {
+          _gpsPrompted = true;
+          await geolocator.Geolocator.openLocationSettings();
+        }
+        if (mounted) {
+          ToastHelper.showWarning(
+            context,
+            'GPS belum aktif. Aktifkan lokasi untuk absensi.',
+          );
+        }
+        return false;
+      }
+
+      return true;
+    } finally {
+      _gpsCheckInProgress = false;
     }
   }
 
@@ -393,6 +462,10 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
 
   Future<void> _handleCheckIn() async {
     debugPrint('[HomeTab] Check-in button pressed');
+    final gpsReady = await _ensureGpsActive(promptSettings: true);
+    if (!gpsReady) {
+      return;
+    }
     
     // Check if user has active leave request
     final requestProvider = Provider.of<RequestProvider>(context, listen: false);
@@ -470,6 +543,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
         builder: (_) => const CameraScreen(
           title: 'Ambil Selfie untuk Check-In',
           allowGallery: false, // Check-in hanya boleh kamera
+          preferLowResolution: true,
         ),
       ),
     );
@@ -520,6 +594,10 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
 
   Future<void> _handleCheckOut() async {
     debugPrint('[HomeTab] Check-out button pressed');
+    final gpsReady = await _ensureGpsActive(promptSettings: true);
+    if (!gpsReady) {
+      return;
+    }
     debugPrint('[HomeTab] Opening camera for check-out selfie...');
 
     final attendanceProvider =

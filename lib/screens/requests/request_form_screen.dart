@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../providers/request_provider.dart';
+import '../../widgets/adaptive_image.dart' as adaptive_image;
 
 class RequestFormScreen extends StatefulWidget {
   const RequestFormScreen({super.key});
@@ -16,6 +19,8 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
   String _selectedType = 'izin';
   DateTime? _startDate;
   DateTime? _endDate;
+  final List<File> _photos = [];
+  final ImagePicker _imagePicker = ImagePicker();
 
   Future<void> _selectStartDate() async {
     final picked = await showDatePicker(
@@ -55,6 +60,35 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
     }
   }
 
+  Future<void> _pickPhoto() async {
+    try {
+      final pickedFile = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+
+      if (pickedFile != null) {
+        setState(() {
+          _photos.add(File(pickedFile.path));
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal mengambil foto: $e')),
+        );
+      }
+    }
+  }
+
+  void _removePhoto(int index) {
+    setState(() {
+      _photos.removeAt(index);
+    });
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -73,6 +107,7 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
       reason: _reasonController.text.trim(),
       startDate: DateFormat('yyyy-MM-dd').format(_startDate!),
       endDate: DateFormat('yyyy-MM-dd').format(_endDate!),
+      photos: _photos,
     );
 
     if (mounted) {
@@ -180,6 +215,102 @@ class _RequestFormScreenState extends State<RequestFormScreen> {
                 }
                 return null;
               },
+            ),
+            const SizedBox(height: 16),
+            // Photos (especially useful for sick leave)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Foto Bukti',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '(Opsional - sangat berguna untuk izin sakit)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (_photos.isNotEmpty) ...[
+                  SizedBox(
+                    height: 100,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _photos.length,
+                      itemBuilder: (context, index) {
+                        return Stack(
+                          children: [
+                            Container(
+                              width: 100,
+                              height: 100,
+                              margin: const EdgeInsets.only(right: 8),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: adaptive_image.AdaptiveImage.file(
+                                  _photos[index],
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              top: 4,
+                              right: 12,
+                              child: GestureDetector(
+                                onTap: () => _removePhoto(index),
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.red,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.close,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                OutlinedButton.icon(
+                  onPressed: _photos.length >= 5 ? null : _pickPhoto,
+                  icon: const Icon(Icons.camera_alt),
+                  label: Text(_photos.isEmpty ? 'Ambil Foto' : 'Tambah Foto (${_photos.length}/5)'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+                if (_photos.length >= 5) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Maksimal 5 foto',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange[700],
+                    ),
+                  ),
+                ],
+              ],
             ),
             const SizedBox(height: 24),
             // Submit Button

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/request_model.dart';
 import '../services/request_service.dart';
@@ -36,6 +37,7 @@ class RequestProvider with ChangeNotifier {
     required String reason,
     required String startDate,
     required String endDate,
+    List<File> photos = const [],
   }) async {
     _isLoading = true;
     _error = null;
@@ -47,6 +49,7 @@ class RequestProvider with ChangeNotifier {
         reason: reason,
         startDate: startDate,
         endDate: endDate,
+        photos: photos,
       );
 
       if (result['success'] == true) {

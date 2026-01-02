@@ -42,10 +42,13 @@ class ApiService {
       onResponse: (response, handler) async {
         // Check for session expired in response (401/403)
         if (response.statusCode == 401 || response.statusCode == 403) {
-          // Trigger auto logout callback (only once)
-          if (_onSessionExpired != null && !_isLoggingOut) {
-            _isLoggingOut = true;
-            _onSessionExpired!();
+          final path = response.requestOptions.path;
+          if (path == ApiConfig.session) {
+            // Trigger auto logout callback (only once)
+            if (_onSessionExpired != null && !_isLoggingOut) {
+              _isLoggingOut = true;
+              _onSessionExpired!();
+            }
           }
         }
         
@@ -63,10 +66,13 @@ class ApiService {
           
           // Handle session expired (401 Unauthorized atau 403 Forbidden)
           if (statusCode == 401 || statusCode == 403) {
-            // Trigger auto logout callback (only once)
-            if (_onSessionExpired != null && !_isLoggingOut) {
-              _isLoggingOut = true;
-              _onSessionExpired!();
+            final path = error.requestOptions.path;
+            if (path == ApiConfig.session) {
+              // Trigger auto logout callback (only once)
+              if (_onSessionExpired != null && !_isLoggingOut) {
+                _isLoggingOut = true;
+                _onSessionExpired!();
+              }
             }
           }
         }

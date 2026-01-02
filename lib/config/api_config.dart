@@ -41,6 +41,7 @@ class ApiConfig {
   static const String checkOut = '/api/ess/attendance/check-out';
   static const String shifts = '/api/ess/shifts';
   static const String activity = '/api/ess/activity';
+  static const String activities = '/api/ess/activities'; // For GET requests
   static String activityById(String id) => '/api/ess/activity/$id';
   static const String checkpointPhoto = '/api/ess/activity/checkpoint-photo';
   static const String requests = '/api/ess/requests';
@@ -48,6 +49,7 @@ class ApiConfig {
   static const String setPassword = '/api/ess/profile/set-password';
   static const String realtimeLog = '/api/supervisor/attendance/realtime/log';
   static const String clientErrorLog = '/api/ess/client-logs';
+  static const String version = '/api/version';
   
   // Helper methods
   static String getFullUrl(String endpoint) {

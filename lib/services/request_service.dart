@@ -1,6 +1,11 @@
+import 'dart:io';
+import 'package:dio/dio.dart';
 import '../config/api_config.dart';
 import '../models/request_model.dart';
 import 'api_service.dart';
+
+// Explicitly import Dio types that may not be resolved
+import 'package:dio/dio.dart' as dio;
 
 class RequestService {
   final ApiService _apiService = ApiService();
@@ -35,26 +40,60 @@ class RequestService {
     required String reason,
     required String startDate,
     required String endDate,
+    List<File> photos = const [],
   }) async {
     try {
-      final response = await _apiService.post(
-        ApiConfig.requests,
-        data: {
+      if (photos.isNotEmpty) {
+        // Use FormData when photos are provided
+        final formData = dio.FormData.fromMap({
           'type': type,
           'reason': reason,
           'startDate': startDate,
           'endDate': endDate,
-        },
-      );
+        });
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return {
-          'success': true,
-          'data': response.data['data'],
-          'message': response.data['message'] ?? 'Request berhasil dikirim',
-        };
+        // Add photos to form data
+        for (final photo in photos) {
+          formData.files.add(
+            MapEntry(
+              'photos', // Backend expects "photos" for multiple files
+              await dio.MultipartFile.fromFile(photo.path),
+            ),
+          );
+        }
+
+        final response = await _apiService.postFormData(ApiConfig.requests, formData);
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          return {
+            'success': true,
+            'data': response.data['data'],
+            'message': response.data['message'] ?? 'Request berhasil dikirim',
+          };
+        } else {
+          throw Exception(response.data['message'] ?? 'Gagal mengirim request');
+        }
       } else {
-        throw Exception(response.data['message'] ?? 'Gagal mengirim request');
+        // Use regular JSON when no photos
+        final response = await _apiService.post(
+          ApiConfig.requests,
+          data: {
+            'type': type,
+            'reason': reason,
+            'startDate': startDate,
+            'endDate': endDate,
+          },
+        );
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          return {
+            'success': true,
+            'data': response.data['data'],
+            'message': response.data['message'] ?? 'Request berhasil dikirim',
+          };
+        } else {
+          throw Exception(response.data['message'] ?? 'Gagal mengirim request');
+        }
       }
     } catch (e) {
       return {

@@ -50,6 +50,7 @@ class _PatroliFormScreenState extends State<PatroliFormScreen> {
         builder: (_) => const CameraScreen(
           title: 'Foto Patroli',
           allowGallery: false, // Hanya kamera untuk patroli
+          preferLowResolution: true,
         ),
       ),
     );
@@ -101,7 +102,11 @@ class _PatroliFormScreenState extends State<PatroliFormScreen> {
       });
 
       if (success) {
-        ToastHelper.showSuccess(context, 'Laporan patroli berhasil disimpan');
+        final successMessage = activityProvider.successMessage;
+        ToastHelper.showSuccess(
+          context,
+          successMessage ?? 'Laporan patroli berhasil disimpan',
+        );
         Navigator.pop(context);
       } else {
         ToastHelper.showError(

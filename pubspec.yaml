@@ -36,6 +36,15 @@ dependencies:
   # Location & GPS
   geolocator: ^11.0.0
   permission_handler: ^11.1.0
+
+  # URL Launcher (for opening Play Store)
+  url_launcher: ^6.3.2
+
+  # Package Info (for getting app version)
+  package_info_plus: ^4.2.0
+
+  # Local Notifications (for persistent check-in notification)
+  flutter_local_notifications: ^17.2.2
   
   # Date & Time
   intl: ^0.20.2
@@ -48,6 +57,8 @@ dependencies:
   
   # Environment Variables
   flutter_dotenv: ^5.1.0
+  flutter_background_service: ^5.1.0
+  flutter_background_service_android: ^6.3.1
 
 dev_dependencies:
   flutter_test:

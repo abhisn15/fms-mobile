@@ -1,18 +1,31 @@
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
+import '../models/version_model.dart';
 import '../services/auth_service.dart';
+import '../services/background_tracking_service.dart';
+import '../services/tracking_state_service.dart';
+import '../services/version_service.dart';
 import '../utils/error_handler.dart';
 
 class AuthProvider with ChangeNotifier {
   final AuthService _authService = AuthService();
+  final VersionService _versionService = VersionService();
   User? _user;
   bool _isLoading = false;
   String? _error;
+
+  // Version check callback
+  Function(bool updateAvailable, bool updateRequired, VersionData? versionData)? _onVersionCheck;
 
   User? get user => _user;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isAuthenticated => _user != null;
+
+  // Set callback for version check results
+  void setVersionCheckCallback(Function(bool updateAvailable, bool updateRequired, VersionData? versionData) callback) {
+    _onVersionCheck = callback;
+  }
 
   AuthProvider() {
     _checkAuthStatus();
@@ -25,18 +38,30 @@ class AuthProvider with ChangeNotifier {
     try {
       _user = await _authService.getCurrentUser();
       if (_user == null) {
-        // Session expired atau tidak valid
-        debugPrint('[AuthProvider] Session expired or invalid');
-        await logout();
+        final cachedUser = await _authService.getCachedUserOnly();
+        if (cachedUser != null) {
+          debugPrint('[AuthProvider] Using cached user (offline mode).');
+          _user = cachedUser;
+        } else {
+          // Session expired atau tidak valid
+          debugPrint('[AuthProvider] Session expired or invalid');
+          await logout();
+        }
       }
       _error = null;
     } catch (e) {
       debugPrint('[AuthProvider] Error checking auth status: $e');
       _error = ErrorHandler.getErrorMessage(e);
-      _user = null;
-      // Jika error karena session expired, logout
-      if (e.toString().contains('401') || e.toString().contains('403')) {
-        await logout();
+      final cachedUser = await _authService.getCachedUserOnly();
+      if (cachedUser != null) {
+        debugPrint('[AuthProvider] Using cached user after error.');
+        _user = cachedUser;
+      } else {
+        _user = null;
+        // Jika error karena session expired, logout
+        if (e.toString().contains('401') || e.toString().contains('403')) {
+          await logout();
+        }
       }
     } finally {
       _isLoading = false;
@@ -53,6 +78,22 @@ class AuthProvider with ChangeNotifier {
       final result = await _authService.login(email, password);
       if (result['success'] == true) {
         _user = result['user'] as User;
+
+        // Check for app updates after successful login
+        try {
+          final updateCheck = await _versionService.checkUpdateAvailability();
+          if (_onVersionCheck != null) {
+            _onVersionCheck!(
+              updateCheck.updateAvailable,
+              updateCheck.updateRequired,
+              updateCheck.serverVersion,
+            );
+          }
+        } catch (e) {
+          debugPrint('[AuthProvider] Version check failed: $e');
+          // Don't fail login just because version check failed
+        }
+
         _error = null;
         _isLoading = false;
         notifyListeners();
@@ -73,6 +114,8 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> logout() async {
     debugPrint('[AuthProvider] Logging out...');
+    await TrackingStateService.clearTrackingState();
+    await BackgroundTrackingService.stop();
     await _authService.logout();
     _user = null;
     _error = null;

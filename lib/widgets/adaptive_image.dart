@@ -1,5 +1,86 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+
+/// Adaptive image widget that handles both network and file images
+class AdaptiveImage extends StatelessWidget {
+  final String? imageUrl;
+  final File? imageFile;
+  final BoxFit? fit;
+  final ImageErrorWidgetBuilder? errorBuilder;
+  final double? width;
+  final double? height;
+
+  const AdaptiveImage.network(
+    this.imageUrl, {
+    Key? key,
+    this.fit,
+    this.errorBuilder,
+    this.width,
+    this.height,
+  })  : imageFile = null,
+        super(key: key);
+
+  const AdaptiveImage.file(
+    this.imageFile, {
+    Key? key,
+    this.fit,
+    this.width,
+    this.height,
+  })  : imageUrl = null,
+        errorBuilder = null,
+        super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    if (imageUrl != null) {
+      // Network image
+      return CachedNetworkImage(
+        imageUrl: imageUrl!,
+        width: width,
+        height: height,
+        fit: fit,
+        placeholder: (context, url) => Container(
+          color: Colors.grey[200],
+          child: const Center(
+            child: CircularProgressIndicator(),
+          ),
+        ),
+        errorWidget: (context, url, error) => Container(
+          color: Colors.grey[100],
+          child: const Icon(
+            Icons.broken_image,
+            color: Colors.grey,
+          ),
+        ),
+      );
+    } else if (imageFile != null) {
+      // File image
+      return Image.file(
+        imageFile!,
+        width: width,
+        height: height,
+        fit: fit,
+        errorBuilder: (context, error, stackTrace) => Container(
+          color: Colors.grey[100],
+          child: const Icon(
+            Icons.broken_image,
+            color: Colors.grey,
+          ),
+        ),
+      );
+    } else {
+      // No image provided
+      return Container(
+        color: Colors.grey[100],
+        child: const Icon(
+          Icons.image_not_supported,
+          color: Colors.grey,
+        ),
+      );
+    }
+  }
+}
 
 /// Widget untuk menampilkan foto fullscreen dengan aspect ratio yang benar
 class FullScreenImageDialog extends StatelessWidget {

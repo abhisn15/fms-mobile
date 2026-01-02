@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/activity_provider.dart';
@@ -15,6 +17,11 @@ class PatroliListScreen extends StatefulWidget {
 }
 
 class _PatroliListScreenState extends State<PatroliListScreen> {
+  // Helper untuk membedakan daily activity dan patroli
+  bool _isPatroli(DailyActivity activity) {
+    // Use the model's computed isPatroli property
+    return activity.isPatroli;
+  }
   // Default: bulan ini (tanggal 1 sampai hari ini)
   late DateTime _startDate = _getDefaultStartDate();
   late DateTime _endDate = _getDefaultEndDate();
@@ -48,6 +55,21 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
       return createdAt;
     }
     return parsedDate;
+  }
+
+  bool _isLocalPhotoUrl(String url) {
+    return url.startsWith('file://');
+  }
+
+  String _resolveLocalPath(String url) {
+    if (!url.startsWith('file://')) {
+      return url;
+    }
+    try {
+      return Uri.parse(url).toFilePath();
+    } catch (_) {
+      return url.replaceFirst('file://', '');
+    }
   }
 
   @override
@@ -199,39 +221,35 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
                 }
 
                 // Gabungkan todayActivity dengan recentActivities untuk filter patroli
+                // (pending activities already merged in ActivityProvider)
                 final allActivities = <DailyActivity>[];
                 if (activityProvider.todayActivity != null) {
                   allActivities.add(activityProvider.todayActivity!);
                 }
                 allActivities.addAll(activityProvider.recentActivities);
+                debugPrint('[PatroliListScreen] Total activities: ${allActivities.length}');
                 
-                // Filter activities yang merupakan patroli:
-                // 1. Punya latitude/longitude (GPS)
-                // 2. Punya locationName atau checkpoints
-                // 3. Notes mengandung "📍" (indikator patroli dari backend)
-                // 4. Filter berdasarkan tanggal
+                // Filter activities yang merupakan patroli (bukan daily activity):
+                // Menggunakan helper _isPatroli() untuk konsistensi dengan ActivityScreen
+                // Kemudian filter berdasarkan tanggal
                 final startDateOnly = DateTime(_startDate.year, _startDate.month, _startDate.day);
                 final endDateOnly = DateTime(_endDate.year, _endDate.month, _endDate.day).add(const Duration(days: 1));
                 
                 final patroliList = allActivities.where((activity) {
-                  final hasGPS = activity.latitude != null && activity.longitude != null;
-                  final hasPatroliMarker = activity.notes != null && activity.notes!.contains('📍');
-                  final hasLocationName = activity.locationName != null && activity.locationName!.isNotEmpty;
-                  final hasCheckpoints = activity.checkpoints != null && activity.checkpoints!.isNotEmpty;
-                  
-                  final isPatroli = hasGPS || hasLocationName || hasCheckpoints || hasPatroliMarker;
-                  
-                  if (!isPatroli) return false;
-                  
+                  // Filter: hanya tampilkan patroli (bukan daily activity)
+                  if (!_isPatroli(activity)) return false;
+
                   // Filter berdasarkan tanggal
                   final activityDate = _parseActivityDate(activity);
                   if (activityDate == null) return true;
                   final activityDateOnly = DateTime(activityDate.year, activityDate.month, activityDate.day);
                   if (activityDateOnly.isBefore(startDateOnly.subtract(const Duration(days: 1)))) return false;
                   if (activityDateOnly.isAfter(endDateOnly)) return false;
-                  
+
                   return true;
                 }).toList();
+
+                debugPrint('[PatroliListScreen] Filtered ${allActivities.length} total activities to ${patroliList.length} patroli activities');
 
                 // Calculate pagination
                 final totalItems = patroliList.length;
@@ -308,6 +326,29 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
                                 ),
                               ),
                               const Spacer(),
+                              if (patroli.isLocal)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange[100],
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.schedule, size: 10, color: Colors.orange[800]),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Pending - Tunggu Koneksi',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.orange[800],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               if (patroli.photoUrls != null && patroli.photoUrls!.isNotEmpty)
                                 Row(
                                   children: [
@@ -581,15 +622,21 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
                         spacing: 8,
                         runSpacing: 8,
                         children: patroli.photoUrls!.map((photoUrl) {
-                          final fullUrl = ApiConfig.getImageUrl(photoUrl);
+                          final isLocal = _isLocalPhotoUrl(photoUrl);
+                          final localPath = isLocal ? _resolveLocalPath(photoUrl) : null;
+                          final fullUrl = isLocal ? null : ApiConfig.getImageUrl(photoUrl);
                           return GestureDetector(
                             onTap: () {
                               // Show full screen image dengan aspect ratio yang benar
                               showDialog(
                                 context: context,
-                                builder: (context) => FullScreenImageDialog.network(
-                                  imageUrl: fullUrl,
-                                ),
+                                builder: (context) => isLocal
+                                    ? FullScreenImageDialog.file(
+                                        imageFile: File(localPath!),
+                                      )
+                                    : FullScreenImageDialog.network(
+                                        imageUrl: fullUrl!,
+                                      ),
                               );
                             },
                             child: ClipRRect(
@@ -597,25 +644,36 @@ class _PatroliListScreenState extends State<PatroliListScreen> {
                               child: Container(
                                 width: 100,
                                 height: 133, // 100 * 4/3 untuk portrait (lebih tinggi)
-                                child: Image.network(
-                                  fullUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      color: Colors.grey[200],
-                                      child: const Icon(Icons.broken_image),
-                                    );
-                                  },
-                                  loadingBuilder: (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Container(
-                                      color: Colors.grey[200],
-                                      child: const Center(
-                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                child: isLocal
+                                    ? Image.file(
+                                        File(localPath!),
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return Container(
+                                            color: Colors.grey[200],
+                                            child: const Icon(Icons.broken_image),
+                                          );
+                                        },
+                                      )
+                                    : Image.network(
+                                        fullUrl!,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return Container(
+                                            color: Colors.grey[200],
+                                            child: const Icon(Icons.broken_image),
+                                          );
+                                        },
+                                        loadingBuilder: (context, child, loadingProgress) {
+                                          if (loadingProgress == null) return child;
+                                          return Container(
+                                            color: Colors.grey[200],
+                                            child: const Center(
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            ),
+                                          );
+                                        },
                                       ),
-                                    );
-                                  },
-                                ),
                               ),
                             ),
                           );

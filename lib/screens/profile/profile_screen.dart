@@ -176,7 +176,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       context,
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            const CameraScreen(title: 'Ambil Foto Profil'),
+            const CameraScreen(
+              title: 'Ambil Foto Profil',
+              preferLowResolution: true,
+            ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
@@ -633,6 +636,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                   value: user.team!,
                 ),
               ],
+              const Divider(height: 32),
+              _buildInfoRow(
+                icon: Icons.location_on,
+                label: 'Site',
+                value: (user.site?.name?.isNotEmpty ?? false)
+                    ? user.site!.name
+                    : (user.siteId ?? ''),
+              ),
               const Divider(height: 32),
               _buildInfoRow(
                 icon: Icons.security,

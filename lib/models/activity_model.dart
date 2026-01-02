@@ -1,8 +1,21 @@
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
+
 String _stringValue(dynamic value) {
   if (value == null) return '';
   return value.toString();
+}
+
+bool _isPatroliComputed(String? type, String? locationName, double? latitude, double? longitude, List<SecurityCheckpoint>? checkpoints) {
+  // Jika type sudah ditentukan dari server, gunakan itu
+  if (type == 'patroli') return true;
+  if (type == 'daily') return false;
+
+  // Fallback: deteksi berdasarkan data
+  return (locationName != null && locationName.isNotEmpty) ||
+         (latitude != null && longitude != null) ||
+         (checkpoints != null && checkpoints.isNotEmpty);
 }
 
 int _intValue(dynamic value) {
@@ -119,6 +132,9 @@ class DailyActivity {
   final String createdAt;
   final bool? isRead; // Status apakah sudah dibaca oleh admin/supervisor
   final int? viewsCount; // Jumlah admin/supervisor yang sudah melihat
+  final bool isLocal; // Data lokal (offline) yang belum tersinkron
+  final String? type; // 'daily' or 'patroli'
+  final bool isPatroli; // Computed property: apakah ini patroli
 
   DailyActivity({
     required this.id,
@@ -139,7 +155,9 @@ class DailyActivity {
     required this.createdAt,
     this.isRead,
     this.viewsCount,
-  });
+    this.isLocal = false,
+    this.type,
+  }) : isPatroli = _isPatroliComputed(type, locationName, latitude, longitude, checkpoints);
 
   factory DailyActivity.fromJson(Map<String, dynamic> json) {
     final checkpointsRaw = _listValue(json['checkpoints']);
@@ -171,7 +189,34 @@ class DailyActivity {
       createdAt: createdAtValue,
       isRead: json['isRead'] as bool?,
       viewsCount: json['viewsCount'] != null ? _intValue(json['viewsCount']) : null,
+      isLocal: json['isLocal'] == true,
+      type: json['type'] as String?,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'userId': userId,
+      'date': date,
+      'summary': summary,
+      'sentiment': sentiment,
+      'focusHours': focusHours,
+      'blockers': blockers,
+      'highlights': highlights,
+      'plans': plans,
+      if (notes != null) 'notes': notes,
+      if (locationName != null) 'locationName': locationName,
+      if (checkpoints != null)
+        'checkpoints': checkpoints!.map((item) => item.toJson()).toList(),
+      if (photoUrls != null) 'photoUrls': photoUrls,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      'createdAt': createdAt,
+      if (isRead != null) 'isRead': isRead,
+      if (viewsCount != null) 'viewsCount': viewsCount,
+      if (isLocal) 'isLocal': true,
+    };
   }
 }
 
@@ -301,14 +346,26 @@ class ActivityPayload {
           continue;
         }
         final activity = DailyActivity.fromJson(entry);
+        debugPrint('[ActivityPayload] Parsed activity: ${activity.summary}, type: ${activity.type}, date: ${activity.date}, isPatroli: ${activity.isPatroli}');
+
         // Compare dates (both should be in YYYY-MM-DD format)
         final activityDate = _resolveDateOnlyForCompare(activity);
+        debugPrint('[ActivityPayload] Activity date: $activityDate, today: $todayDate');
+
         if (activityDate == todayDate) {
-          todayActivity = activity;
+          if (todayActivity == null) {
+            todayActivity = activity;
+            debugPrint('[ActivityPayload] Set as today activity');
+          } else {
+            recentActivities.add(activity);
+            debugPrint('[ActivityPayload] Added to recent (multiple today activities)');
+          }
         } else {
           recentActivities.add(activity);
+          debugPrint('[ActivityPayload] Added to recent');
         }
       } catch (e) {
+        debugPrint('[ActivityPayload] Error parsing activity: $e');
         // Skip invalid entries
         continue;
       }

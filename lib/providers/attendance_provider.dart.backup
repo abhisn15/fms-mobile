@@ -56,53 +56,7 @@ class AttendanceProvider with ChangeNotifier {
   }
 
   void setForegroundActive(bool value) {
-    debugPrint('[AttendanceProvider] Foreground status changed: $value');
-    try {
-      (_realtimeService as dynamic)?.setForegroundActive?.call(value);
-    } catch (e) {
-      debugPrint('[AttendanceProvider] setForegroundActive not available: $e');
-    }
-  }
-
-  void _safeCall(Function fn) {
-    try {
-      fn();
-    } catch (e) {
-      // Method might not exist yet, ignore for now
-      debugPrint('[AttendanceProvider] Method not available: $e');
-    }
-  }
-
-  Future<void> _safeCallAsync(Function fn) async {
-    try {
-      await fn();
-    } catch (e) {
-      // Method might not exist yet, ignore for now
-      debugPrint('[AttendanceProvider] Async method not available: $e');
-    }
-  }
-
-  // Safe method calls using dynamic access
-  void _safeSetForegroundActive(bool value) {
-    try {
-      (_realtimeService as dynamic)?.setForegroundActive?.call(value);
-    } catch (e) {
-      debugPrint('[AttendanceProvider] setForegroundActive not available: $e');
-    }
-  }
-
-  void _safeSyncPendingLocationLogs() {
-    _realtimeService.syncPendingLocationLogs().catchError((e) {
-      debugPrint('[AttendanceProvider] syncPendingLocationLogs not available: $e');
-    });
-  }
-
-  Future<void> _safeSyncPendingLocationLogsAsync() async {
-    try {
-      await _realtimeService.syncPendingLocationLogs();
-    } catch (e) {
-      debugPrint('[AttendanceProvider] syncPendingLocationLogs async not available: $e');
-    }
+    _realtimeService.setForegroundActive(value);
   }
 
   void _handleConnectivityChange() {
@@ -111,10 +65,7 @@ class AttendanceProvider with ChangeNotifier {
       return;
     }
     syncPendingAttendance();
-    debugPrint('[AttendanceProvider] Sync pending location logs');
-    _realtimeService.syncPendingLocationLogs().catchError((e) {
-      debugPrint('[AttendanceProvider] syncPendingLocationLogs not available: $e');
-    });
+    _realtimeService.syncPendingLocationLogs();
     syncRealtimeTracking();
     ensureBackgroundTracking(); // Pastikan background service running
   }
@@ -669,11 +620,7 @@ class AttendanceProvider with ChangeNotifier {
     try {
       final checkInSynced = await _syncPendingCheckIns();
       final checkOutSynced = await _syncPendingCheckOuts();
-      try {
-        await _realtimeService.syncPendingLocationLogs();
-      } catch (e) {
-        debugPrint('[AttendanceProvider] syncPendingLocationLogs async not available: $e');
-      }
+      await _realtimeService.syncPendingLocationLogs();
       if (checkInSynced || checkOutSynced) {
         final now = DateTime.now();
         final startDate = DateTime(now.year, now.month, 1);

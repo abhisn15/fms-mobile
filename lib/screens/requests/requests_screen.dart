@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/request_provider.dart';
+import '../../widgets/adaptive_image.dart' as adaptive_image;
 import 'request_form_screen.dart';
 
 class RequestsScreen extends StatefulWidget {
@@ -343,36 +344,97 @@ class _RequestsScreenState extends State<RequestsScreen> {
                           padding: const EdgeInsets.all(16),
                           children: paginatedRequests.map((request) => Card(
                                 margin: const EdgeInsets.only(bottom: 8),
-                                child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: _getStatusColor(request.status).withOpacity(0.2),
-                                    child: Icon(
-                                      _getStatusIcon(request.status),
-                                      color: _getStatusColor(request.status),
-                                    ),
-                                  ),
-                                  title: Text(_getTypeLabel(request.type)),
-                                  subtitle: Column(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(request.reason),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '${DateFormat('dd MMM yyyy').format(DateTime.parse(request.startDate))} - ${DateFormat('dd MMM yyyy').format(DateTime.parse(request.endDate))}',
-                                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                                      // Header with type, status, and dates
+                                      Row(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 16,
+                                            backgroundColor: _getStatusColor(request.status).withOpacity(0.2),
+                                            child: Icon(
+                                              _getStatusIcon(request.status),
+                                              color: _getStatusColor(request.status),
+                                              size: 16,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  _getTypeLabel(request.type),
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w500,
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '${DateFormat('dd MMM yyyy').format(DateTime.parse(request.startDate))} - ${DateFormat('dd MMM yyyy').format(DateTime.parse(request.endDate))}',
+                                                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Chip(
+                                            label: Text(request.status.toUpperCase()),
+                                            backgroundColor: _getStatusColor(request.status).withOpacity(0.2),
+                                            labelStyle: TextStyle(
+                                              color: _getStatusColor(request.status),
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
                                       ),
+                                      const SizedBox(height: 8),
+                                      // Reason
+                                      Text(request.reason),
+                                      // Photos (if any)
+                                      if (request.photoUrls != null && request.photoUrls!.isNotEmpty) ...[
+                                        const SizedBox(height: 12),
+                                        SizedBox(
+                                          height: 80,
+                                          child: ListView.builder(
+                                            scrollDirection: Axis.horizontal,
+                                            itemCount: request.photoUrls!.length,
+                                            itemBuilder: (context, index) {
+                                              final photoUrl = request.photoUrls![index];
+                                              return Container(
+                                                width: 80,
+                                                height: 80,
+                                                margin: const EdgeInsets.only(right: 8),
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(color: Colors.grey[300]!),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: ClipRRect(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  child: adaptive_image.AdaptiveImage.network(
+                                                    photoUrl,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (context, error, stackTrace) {
+                                                      return Container(
+                                                        color: Colors.grey[100],
+                                                        child: const Icon(
+                                                          Icons.broken_image,
+                                                          color: Colors.grey,
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
-                                  trailing: Chip(
-                                    label: Text(request.status.toUpperCase()),
-                                    backgroundColor: _getStatusColor(request.status).withOpacity(0.2),
-                                    labelStyle: TextStyle(
-                                      color: _getStatusColor(request.status),
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  isThreeLine: true,
                                 ),
                               )).toList(),
                         ),
