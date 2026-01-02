@@ -164,7 +164,7 @@ class AttendanceService {
       // Return defaults if API fails
       return {
         'data': {
-          'intervalSeconds': 300, // 5 minutes default
+          'intervalSeconds': 60, // 1 minute default
           'isEnabled': true,
         }
       };

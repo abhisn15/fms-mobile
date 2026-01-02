@@ -44,7 +44,7 @@ class VersionService {
     } catch (e) {
       debugPrint('[VersionService] Error getting current app version: $e');
       // Fallback to hardcoded version if package_info fails
-      return '1.1.13';
+      return '1.1.14';
     }
   }
 

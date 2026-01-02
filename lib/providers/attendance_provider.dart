@@ -157,7 +157,7 @@ class AttendanceProvider with ChangeNotifier {
         user: user,
         attendanceId: today.id,
         checkInDate: checkInDate,
-        intervalSeconds: 300, // 5 minutes default
+        intervalSeconds: 60, // 1 minute default
       );
       _realtimeTrackingInitialized = true;
       debugPrint('[AttendanceProvider] ✓ Realtime tracking started (auto sync)');
@@ -397,22 +397,22 @@ class AttendanceProvider with ChangeNotifier {
 
                 // Get location tracking settings from server
                 debugPrint('[AttendanceProvider] Getting location tracking settings from server...');
-                int intervalSeconds = 300; // Default 5 minutes
+                int intervalSeconds = 60; // Default 1 minute
                 bool isEnabled = true;
 
                 try {
                   final locationSettings = await getLocationSettings();
                   final settingsData = locationSettings['data'] as Map<String, dynamic>?;
-                  intervalSeconds = settingsData?['intervalSeconds'] as int? ?? 300;
+                  intervalSeconds = settingsData?['intervalSeconds'] as int? ?? 60;
                   isEnabled = settingsData?['isEnabled'] as bool? ?? true;
 
-                  debugPrint('[AttendanceProvider] ✅ Location tracking settings loaded: interval=$intervalSeconds seconds, enabled=$isEnabled');
+                  debugPrint('[AttendanceProvider] ✅ Location tracking settings loaded: interval=$intervalSeconds seconds (1 min default), enabled=$isEnabled');
                 } catch (e) {
                   debugPrint('[AttendanceProvider] ⚠️ Failed to load location settings from server: $e');
-                  debugPrint('[AttendanceProvider] 🔄 Using default settings: interval=$intervalSeconds seconds, enabled=$isEnabled');
+                  debugPrint('[AttendanceProvider] 🔄 Using default settings: interval=$intervalSeconds seconds (1 min), enabled=$isEnabled');
                 }
 
-                // Use server setting or default to 300 seconds (5 minutes)
+                // Use server setting or default to 60 seconds (1 minute)
                 debugPrint('[AttendanceProvider] 📊 Final interval: $intervalSeconds seconds');
 
                 if (isEnabled) {
@@ -456,7 +456,7 @@ class AttendanceProvider with ChangeNotifier {
                     user: user,
                     attendanceId: attendanceId,
                     checkInDate: now,
-                    intervalSeconds: 300, // 5 minutes default
+                    intervalSeconds: 60, // 1 minute default
                   );
                   debugPrint('[AttendanceProvider] ?o" Realtime tracking started successfully');
                 } else {
@@ -907,12 +907,12 @@ class AttendanceProvider with ChangeNotifier {
         : 'temp-${user.id}-${DateTime.now().millisecondsSinceEpoch}';
 
     try {
-      await _realtimeService.startRealtimeTracking(
-        user: user,
-        attendanceId: attendanceId,
-        checkInDate: checkInDate,
-        intervalSeconds: 300, // 5 minutes default
-      );
+    await _realtimeService.startRealtimeTracking(
+      user: user,
+      attendanceId: attendanceId,
+      checkInDate: checkInDate,
+      intervalSeconds: 60, // 1 minute default
+    );
     } catch (e) {
       debugPrint('[AttendanceProvider] Failed to resume tracking: $e');
     }
