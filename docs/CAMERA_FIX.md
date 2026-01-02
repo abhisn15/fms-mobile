@@ -67,9 +67,45 @@ int _findFrontCameraIndex() {
 }
 ```
 
+## Crash Prevention Fixes
+
+### unlockAutoFocus Crash Fix
+**Masalah**: `io.flutter.plugins.camera.Camera.unlockAutoFocus` - java.lang.IllegalStateException
+
+**Solusi**:
+- Tambahkan safety checks sebelum operasi camera
+- Dispose camera dengan timeout untuk mencegah hanging
+- Double-check controller validity sebelum operasi
+- Prevent multiple initialization
+
+### DartMessenger Reply Crash Fix
+**Masalah**: `io.flutter.embedding.engine.dart.DartMessenger$Reply.reply` - java.lang.IllegalStateException
+
+**Solusi**:
+- Add comprehensive error handling di semua camera operations
+- Prevent race conditions dengan lifecycle state checks
+- Add timeout untuk semua async camera operations
+- Safe disposal dengan multiple fallback attempts
+
+### Lifecycle Management
+- `WidgetsBindingObserver` untuk proper lifecycle handling
+- Defer dispose jika sedang taking picture
+- Safe reinitialization saat resume
+- Prevent rapid re-initialization dengan delay
+
+### Error Boundaries
+- Try-catch di semua camera operations
+- Graceful fallback untuk camera errors
+- User-friendly error messages
+- Prevent app crashes dari camera failures
+
 ## Hasil
 - Preview kamera tidak lagi terlihat gepeng
 - Aspect ratio dipertahankan dengan benar
 - Preview mengisi layar tanpa distorsi
 - Kompatibel dengan berbagai ukuran layar
+- **Crash-resistant camera implementation**
+- **Safe camera lifecycle management**
+- **No more unlockAutoFocus crashes**
+- **No more DartMessenger reply crashes**
 

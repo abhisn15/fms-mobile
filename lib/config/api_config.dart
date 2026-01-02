@@ -50,6 +50,7 @@ class ApiConfig {
   static const String realtimeLog = '/api/supervisor/attendance/realtime/log';
   static const String clientErrorLog = '/api/ess/client-logs';
   static const String version = '/api/version';
+  static const String locationSettings = '/api/ess/location-settings';
   
   // Helper methods
   static String getFullUrl(String endpoint) {

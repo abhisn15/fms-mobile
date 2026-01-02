@@ -9,6 +9,14 @@ Aplikasi mobile untuk karyawan: absensi, aktivitas harian, izin, dan patroli den
 
 Atenim Mobile adalah aplikasi mobile yang dirancang khusus untuk memudahkan karyawan dalam mengelola aktivitas kerja sehari-hari. Dengan antarmuka yang intuitif dan fitur-fitur lengkap, aplikasi ini membantu meningkatkan produktivitas dan efisiensi kerja.
 
+**🆕 UPDATE TERBARU v1.1.14 - Peningkatan Lokasi & Stabilitas**
+- ✅ **Validasi radius lokasi** untuk check-in & check-out sesuai site
+- ✅ **Info penempatan (site) dan instruksi GPS** tampil lebih jelas di beranda
+- ✅ **Pelacakan lokasi latar belakang lebih stabil** (foreground service & notifikasi)
+- ✅ **Perbaikan stabilitas dan bug absensi** untuk pengalaman yang lebih baik
+- ✅ **Optimasi interval tracking** (5 menit) untuk hemat baterai
+- ✅ **Location monitoring real-time** di dashboard admin
+
 **FITUR UTAMA:**
 
 📸 **Absensi Digital dengan Selfie**

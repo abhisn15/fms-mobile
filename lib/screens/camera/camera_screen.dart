@@ -60,11 +60,21 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _deferDispose = true;
         return;
       }
-      _disposeCamera();
+      // Dispose camera safely
+      try {
+        _disposeCamera();
+      } catch (e) {
+        debugPrint('Error disposing camera on lifecycle pause: $e');
+      }
     } else if (state == AppLifecycleState.resumed) {
-      // Only reinitialize if we had permission before
-      if (_hasPermission && (_controller == null || !_controller!.value.isInitialized)) {
-        _checkPermissionAndInitialize();
+      // Only reinitialize if we had permission before and not currently initializing
+      if (_hasPermission && !_isInitializing && !_isDisposing && (_controller == null || !_controller!.value.isInitialized)) {
+        // Add small delay to prevent rapid re-initialization
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted && !_isDisposing && !_isInitializing) {
+            _checkPermissionAndInitialize();
+          }
+        });
       }
     }
   }
@@ -295,53 +305,61 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         });
       }
 
-      // Dispose current controller safely
+      // Dispose current controller safely with additional checks
       final oldController = _controller;
       _controller = null;
-      
+
       try {
-        if (oldController != null && oldController.value.isInitialized) {
-          await oldController.dispose();
+        if (oldController != null && oldController.value.isInitialized && !_isDisposing) {
+          // Add timeout to prevent hanging
+          await oldController.dispose().timeout(
+            const Duration(seconds: 3),
+            onTimeout: () {
+              debugPrint('Timeout disposing camera during switch');
+            },
+          );
         }
       } catch (e) {
         debugPrint('Error disposing old controller during switch: $e');
       }
-      
-      // Wait a bit to ensure camera is released
-      await Future.delayed(const Duration(milliseconds: 200));
-      
+
+      // Wait longer to ensure camera is fully released
+      await Future.delayed(const Duration(milliseconds: 500));
+
       if (!mounted || _isDisposing) {
         return;
       }
-      
+
       _currentCameraIndex = (_currentCameraIndex + 1) % _cameras!.length;
-      
+
       // Try medium preset first for better compatibility
       _controller = CameraController(
         _cameras![_currentCameraIndex],
         widget.preferLowResolution ? ResolutionPreset.low : ResolutionPreset.medium,
         enableAudio: false,
       );
-      
+
       await _controller!.initialize().timeout(
         const Duration(seconds: 15),
         onTimeout: () {
           throw Exception('Timeout saat mengganti kamera');
         },
       );
-      
+
       if (!mounted || _isDisposing || _controller == null) {
         await _disposeCamera();
         return;
       }
-      
-      // Reset flash saat ganti kamera
+
+      // Reset flash saat ganti kamera - with error handling
       try {
-        await _controller!.setFlashMode(FlashMode.off);
+        if (_controller!.value.isInitialized) {
+          await _controller!.setFlashMode(FlashMode.off);
+        }
       } catch (e) {
         debugPrint('Error setting flash mode after switch: $e');
       }
-      
+
       if (mounted && !_isDisposing) {
         setState(() {
           _isCameraReady = true;
@@ -351,12 +369,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     } catch (e) {
       debugPrint('Error switching camera: $e');
       if (mounted && !_isDisposing) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal mengganti kamera: $e'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        // Don't show snackbar for camera switch errors to avoid spam
         // Coba inisialisasi ulang
         await _initializeCamera();
       }
@@ -366,15 +379,20 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _toggleFlash() async {
-    if (_controller == null || 
-        !_controller!.value.isInitialized || 
-        _isDisposing || 
+    if (_controller == null ||
+        !_controller!.value.isInitialized ||
+        _isDisposing ||
         _isInitializing ||
         !mounted) {
       return;
     }
-    
+
     try {
+      // Double check controller is still valid
+      if (_controller == null || !_controller!.value.isInitialized) {
+        return;
+      }
+
       if (_isFlashOn) {
         await _controller!.setFlashMode(FlashMode.off);
         if (mounted && !_isDisposing) {
@@ -388,21 +406,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       }
     } catch (e) {
       debugPrint('Error toggling flash: $e');
-      if (mounted && !_isDisposing) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Flash tidak tersedia: $e'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
+      // Don't show snackbar for flash errors as they are common
     }
   }
 
   Future<void> _capturePhoto() async {
-    if (_controller == null || 
-        !_controller!.value.isInitialized || 
-        _isCapturing || 
+    if (_controller == null ||
+        !_controller!.value.isInitialized ||
+        _isCapturing ||
         _isDisposing ||
         _isInitializing ||
         !mounted) {
@@ -417,6 +428,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     }
 
     try {
+      // Double check controller is still valid before taking picture
+      if (_controller == null || !_controller!.value.isInitialized || _isDisposing) {
+        throw Exception('Camera tidak tersedia');
+      }
+
       // Add timeout to prevent hanging
       final image = await _controller!.takePicture().timeout(
         const Duration(seconds: 10),
@@ -424,25 +440,29 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           throw Exception('Timeout saat mengambil foto');
         },
       );
-      
+
       if (!mounted || _isDisposing) {
         return;
       }
 
       final file = File(image.path);
-      
+
       // Verify file exists
       if (!await file.exists()) {
         throw Exception('File foto tidak ditemukan');
       }
-      
-      // Dispose camera sebelum pop untuk menghindari layar blank
-      await _disposeCamera();
-      
+
+      // Dispose camera dengan safety checks
+      try {
+        await _disposeCamera();
+      } catch (e) {
+        debugPrint('Error disposing camera after capture: $e');
+      }
+
       if (mounted) {
-        // Pop dengan delay kecil untuk memastikan camera sudah di-dispose
-        await Future.delayed(const Duration(milliseconds: 200));
-        if (mounted) {
+        // Pop dengan delay untuk memastikan camera sudah di-dispose
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (mounted && !_isDisposing) {
           Navigator.of(context).pop(file);
         }
       }
@@ -458,7 +478,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         );
       }
       if (_deferDispose) {
-        await _disposeCamera();
+        try {
+          await _disposeCamera();
+        } catch (disposeError) {
+          debugPrint('Error disposing camera after capture error: $disposeError');
+        }
       }
     }
   }
@@ -518,7 +542,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
       if (controller != null) {
         try {
-          if (controller.value.isInitialized) {
+          // Check if controller is still valid before disposing
+          if (controller.value.isInitialized && !_isDisposing) {
             await controller.dispose().timeout(
               const Duration(seconds: 5),
               onTimeout: () {
@@ -528,12 +553,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           }
         } catch (e) {
           debugPrint('Error disposing camera: $e');
-          // Try to dispose anyway
-          try {
-            await controller.dispose();
-          } catch (e2) {
-            debugPrint('Error force disposing camera: $e2');
-          }
+          // Don't try to dispose again to avoid further crashes
+          // Just log and continue
         }
       }
     } catch (e) {
@@ -569,24 +590,30 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   // Build camera preview dengan scaling yang benar untuk full screen tanpa distorsi
   Widget _buildCameraPreview() {
-    if (_controller == null || !_controller!.value.isInitialized) {
+    // Add safety checks to prevent crashes
+    if (_controller == null || !_controller!.value.isInitialized || _isDisposing) {
       return Container(color: Colors.black);
     }
 
-    final size = MediaQuery.of(context).size;
-    var scale = size.aspectRatio * _controller!.value.aspectRatio;
+    try {
+      final size = MediaQuery.of(context).size;
+      var scale = size.aspectRatio * _controller!.value.aspectRatio;
 
-    // To prevent scaling down, invert the value
-    if (scale < 1) scale = 1 / scale;
+      // To prevent scaling down, invert the value
+      if (scale < 1) scale = 1 / scale;
 
-    return ClipRect(
-      child: Transform.scale(
-        scale: scale,
-        child: Center(
-          child: CameraPreview(_controller!),
+      return ClipRect(
+        child: Transform.scale(
+          scale: scale,
+          child: Center(
+            child: CameraPreview(_controller!),
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      debugPrint('Error building camera preview: $e');
+      return Container(color: Colors.black);
+    }
   }
 
   // Helper untuk padding responsive
@@ -623,11 +650,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     bool isCameraValid = false;
     if (!_isDisposing && !_isInitializing) {
       try {
-        isCameraValid = _isCameraReady && 
-                        _controller != null && 
-                        _controller!.value.isInitialized;
+        isCameraValid = _isCameraReady &&
+                        _controller != null &&
+                        _controller!.value.isInitialized &&
+                        !_controller!.value.hasError;
       } catch (e) {
-        // Controller might be disposed, treat as invalid
+        // Controller might be disposed or in invalid state, treat as invalid
         isCameraValid = false;
         debugPrint('Error checking camera validity: $e');
       }

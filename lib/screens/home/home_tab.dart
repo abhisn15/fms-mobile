@@ -17,6 +17,8 @@ import '../../widgets/animated_card.dart';
 import '../../widgets/shimmer_loading.dart';
 import '../../widgets/password_setup_banner.dart';
 import '../../widgets/leave_request_banner.dart';
+import '../../widgets/permission_guidance_dialog.dart';
+import '../../widgets/permission_status_card.dart';
 import '../../config/api_config.dart';
 import '../../utils/toast_helper.dart';
 import 'dart:io';
@@ -584,7 +586,18 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       } catch (e) {
         debugPrint('[HomeTab] Error during check-in: $e');
         if (mounted) {
-          ToastHelper.showError(context, 'Terjadi kesalahan saat check-in: $e');
+          // Check if it's a permission error
+          if (e.toString().contains('izin') || e.toString().contains('permission') ||
+              e.toString().contains('lokasi') || e.toString().contains('Location')) {
+            debugPrint('[HomeTab] 🎯 Permission error detected, showing guidance dialog');
+            await PermissionGuidanceDialog.show(
+              context,
+              title: 'Izin Lokasi Diperlukan',
+              message: e.toString().replaceAll('Exception: ', ''),
+            );
+          } else {
+            ToastHelper.showError(context, 'Terjadi kesalahan saat check-in: $e');
+          }
         }
       }
     } else {
@@ -681,6 +694,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     debugPrint('[HomeTab] Starting duration timer from: $_checkInDateTime');
     // Timer hanya berjalan saat app aktif (foreground)
     // Saat app di background, timer akan di-stop dan durasi akan dihitung ulang saat resume
+    debugPrint('[HomeTab] ⏰ Starting duration timer');
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
         timer.cancel();
@@ -1783,6 +1797,8 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
               ),
               // Leave Request Banner (jika ada izin yang berlangsung)
               const LeaveRequestBanner(),
+              // Permission Status Card (check location & notification permissions)
+              const PermissionStatusCard(),
               // Today's Attendance Card
               _buildTodaysAttendanceCard(context),
               // Error Banner (jika ada error dari provider)

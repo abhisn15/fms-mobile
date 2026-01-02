@@ -15,21 +15,17 @@ import 'providers/request_provider.dart';
 import 'providers/connectivity_provider.dart';
 import 'providers/developer_options_provider.dart';
 import 'widgets/developer_options_warning_dialog.dart';
+import 'services/background_tracking_service.dart';
+import 'services/tracking_state_service.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/home/home_screen.dart';
-import 'screens/splash/splash_screen.dart';
 import 'screens/attendance/attendance_screen.dart';
 import 'screens/profile/force_password_screen.dart';
 import 'services/api_service.dart';
-import 'services/background_tracking_service.dart';
 import 'services/persistent_notification_service.dart';
 import 'widgets/update_dialog.dart';
-import 'widgets/developer_options_warning_dialog.dart';
-import 'providers/developer_options_provider.dart';
 import 'models/version_model.dart';
 import 'services/error_reporting_service.dart';
-import 'services/background_tracking_service.dart';
-import 'services/tracking_state_service.dart';
 
 // Global navigator key untuk akses navigator dari mana saja
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -215,6 +211,48 @@ class _AppLifecycleHandlerState extends State<AppLifecycleHandler> with WidgetsB
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final isForeground = state == AppLifecycleState.resumed;
     _setForeground(isForeground);
+
+    // Recover services when app comes back from background/force close
+    if (state == AppLifecycleState.resumed) {
+      _recoverServicesAfterForceClose();
+    }
+  }
+
+  Future<void> _recoverServicesAfterForceClose() async {
+    debugPrint('[AppLifecycleHandler] 🔄 Recovering services after app resume...');
+
+    try {
+      // 1. Re-initialize persistent notification if needed
+      final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
+      await attendanceProvider.loadAttendance(); // This will restore persistent notification
+
+      // 2. Re-check background tracking status
+      final trackingState = await TrackingStateService.getTrackingState();
+      if (trackingState != null) {
+        debugPrint('[AppLifecycleHandler] 🔄 Background tracking was active, restarting...');
+        await BackgroundTrackingService.ensureRunning();
+      }
+
+      // 3. Re-sync any pending data
+      await _syncPendingData();
+
+      debugPrint('[AppLifecycleHandler] ✅ Services recovered successfully');
+    } catch (e) {
+      debugPrint('[AppLifecycleHandler] ❌ Failed to recover services: $e');
+    }
+  }
+
+  Future<void> _syncPendingData() async {
+    try {
+      // Sync pending activities
+      final activityProvider = Provider.of<ActivityProvider>(context, listen: false);
+      await activityProvider.syncPendingActivities();
+
+      // Location logs will be synced automatically by AttendanceProvider when needed
+      debugPrint('[AppLifecycleHandler] ✅ Pending data synced');
+    } catch (e) {
+      debugPrint('[AppLifecycleHandler] ❌ Failed to sync pending data: $e');
+    }
   }
 
   @override

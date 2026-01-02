@@ -155,6 +155,22 @@ class AttendanceService {
     }
   }
 
+  Future<Map<String, dynamic>> getLocationSettings() async {
+    try {
+      final response = await _apiService.get(ApiConfig.locationSettings);
+      return response.data;
+    } catch (e) {
+      debugPrint('[AttendanceService] Failed to get location settings: $e');
+      // Return defaults if API fails
+      return {
+        'data': {
+          'intervalSeconds': 300, // 5 minutes default
+          'isEnabled': true,
+        }
+      };
+    }
+  }
+
   Future<Map<String, dynamic>> checkIn({
     required File photo,
     String? shiftId, // Opsional - jika tidak ada, gunakan shift yang di-assign atau absen tanpa shift

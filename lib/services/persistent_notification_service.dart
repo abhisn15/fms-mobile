@@ -203,16 +203,16 @@ class PersistentNotificationService {
     }
   }
 
-  /// Start periodic updates for notification (every 30 seconds for near real-time duration)
+  /// Start periodic updates for notification (every 5 minutes to save battery)
   static Timer? _updateTimer;
   static void startPeriodicUpdates(AttendanceRecord todayRecord) {
     stopPeriodicUpdates(); // Stop any existing timer
 
-    _updateTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    _updateTimer = Timer.periodic(const Duration(minutes: 5), (_) {
       updateCheckInNotification(todayRecord);
     });
 
-    debugPrint('[PersistentNotification] Periodic updates started (every 30 seconds)');
+    debugPrint('[PersistentNotification] Periodic updates started (every 5 minutes)');
   }
 
   /// Stop periodic updates
@@ -220,6 +220,45 @@ class PersistentNotificationService {
     _updateTimer?.cancel();
     _updateTimer = null;
     debugPrint('[PersistentNotification] Periodic updates stopped');
+  }
+
+  /// Show location alert notification
+  static Future<void> showLocationAlert(String title, String body) async {
+    if (!_isInitialized) {
+      debugPrint('[PersistentNotification] ⚠️ Service not initialized, cannot show location alert');
+      return;
+    }
+
+    try {
+      const notificationDetails = NotificationDetails(
+        android: AndroidNotificationDetails(
+          'location_alerts', // Different channel for location alerts
+          'Location Alerts',
+          channelDescription: 'Notifikasi alert lokasi dan durasi stay',
+          importance: Importance.high,
+          priority: Priority.high,
+          showWhen: true,
+          enableVibration: true,
+          playSound: true,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      );
+
+      await _notificationsPlugin.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000, // Unique ID based on timestamp
+        title,
+        body,
+        notificationDetails,
+      );
+
+      debugPrint('[PersistentNotification] 📱 Location alert shown: $title');
+    } catch (e) {
+      debugPrint('[PersistentNotification] ⚠️ Error showing location alert: $e');
+    }
   }
 
   /// Clean up resources

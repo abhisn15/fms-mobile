@@ -41,3 +41,4 @@ class DeveloperOptionsProvider with ChangeNotifier {
     await _loadDeveloperOptionsState();
   }
 }
+

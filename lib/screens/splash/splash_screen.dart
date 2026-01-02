@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
-import '../auth/login_screen.dart';
-import '../home/home_screen.dart';
-import '../profile/force_password_screen.dart';
+import '../../main.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -43,30 +39,14 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (!mounted) return;
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
-    // Wait a bit for auth check if still loading
-    if (authProvider.isLoading) {
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-
-    if (!mounted) return;
-
     // Fade out animation before navigation
     await _controller.reverse();
 
     if (mounted) {
-      final user = authProvider.user;
-      final needsPasswordSetup =
-          (user?.hasPassword == false) || (user?.needsPasswordChange == true);
+      // Navigate to AuthWrapper (which handles authentication logic)
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              authProvider.isAuthenticated
-              ? (needsPasswordSetup
-                  ? const ForcePasswordScreen()
-                  : const HomeScreen())
-              : const LoginScreen(),
+          pageBuilder: (context, animation, secondaryAnimation) => const AuthWrapper(),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
           },
