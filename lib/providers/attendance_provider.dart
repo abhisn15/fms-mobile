@@ -53,6 +53,8 @@ class AttendanceProvider with ChangeNotifier {
     _connectivityProvider?.removeListener(_handleConnectivityChange);
     _connectivityProvider = provider;
     _connectivityProvider?.addListener(_handleConnectivityChange);
+
+    // GPS mandatory is now handled internally by RealtimeLocationService
   }
 
   void setForegroundActive(bool value) {

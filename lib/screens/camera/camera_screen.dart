@@ -20,7 +20,8 @@ class CameraScreen extends StatefulWidget {
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
+class _CameraScreenState extends State<CameraScreen>
+    with WidgetsBindingObserver {
   CameraController? _controller;
   List<CameraDescription>? _cameras;
   bool _isCapturing = false;
@@ -55,7 +56,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       return;
     }
 
-    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
       if (_isCapturing || (_controller?.value.isTakingPicture ?? false)) {
         _deferDispose = true;
         return;
@@ -68,7 +70,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       }
     } else if (state == AppLifecycleState.resumed) {
       // Only reinitialize if we had permission before and not currently initializing
-      if (_hasPermission && !_isInitializing && !_isDisposing && (_controller == null || !_controller!.value.isInitialized)) {
+      if (_hasPermission &&
+          !_isInitializing &&
+          !_isDisposing &&
+          (_controller == null || !_controller!.value.isInitialized)) {
         // Add small delay to prevent rapid re-initialization
         Future.delayed(const Duration(milliseconds: 100), () {
           if (mounted && !_isDisposing && !_isInitializing) {
@@ -87,7 +92,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     try {
       // Check camera permission first
       final status = await Permission.camera.status;
-      
+
       if (!status.isGranted) {
         final result = await Permission.camera.request();
         if (!result.isGranted) {
@@ -153,20 +158,24 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       }
 
       _cameras = await availableCameras();
-      
+
       if (_cameras == null || _cameras!.isEmpty) {
         throw Exception('Tidak ada kamera yang tersedia');
       }
 
       // Set kamera depan sebagai default untuk selfie
       _currentCameraIndex = _findFrontCameraIndex();
-      
+
       // Try different resolution presets for device compatibility
-      // Start with medium (better compatibility for older devices like Redmi 5A)
-      // Fallback to low if medium fails, then try high as last resort
+      // Start with LOW for low-end devices (Redmi 5A) to prevent OOM
+      // Fallback to medium if low fails, then try high as last resort
       final presets = widget.preferLowResolution
-          ? [ResolutionPreset.low, ResolutionPreset.medium]
-          : [ResolutionPreset.medium, ResolutionPreset.low, ResolutionPreset.high];
+          ? [ResolutionPreset.low] // Force low resolution for low-end devices
+          : [
+              ResolutionPreset.medium,
+              ResolutionPreset.low,
+              ResolutionPreset.high,
+            ];
       Exception? lastError;
       bool initialized = false;
 
@@ -177,7 +186,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
         try {
           debugPrint('Trying to initialize camera with preset: $preset');
-          
+
           _controller = CameraController(
             _cameras![_currentCameraIndex],
             preset,
@@ -188,10 +197,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           await _controller!.initialize().timeout(
             const Duration(seconds: 15),
             onTimeout: () {
-              throw Exception('Timeout saat menginisialisasi kamera dengan preset $preset');
+              throw Exception(
+                'Timeout saat menginisialisasi kamera dengan preset $preset',
+              );
             },
           );
-          
+
           // Verify controller is still valid after initialization
           if (!mounted || _isDisposing || _controller == null) {
             await _disposeCamera();
@@ -209,7 +220,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         } catch (e) {
           debugPrint('Failed to initialize with preset $preset: $e');
           lastError = e is Exception ? e : Exception(e.toString());
-          
+
           // Dispose failed controller
           try {
             if (_controller != null) {
@@ -219,16 +230,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             debugPrint('Error disposing failed controller: $disposeError');
           }
           _controller = null;
-          
+
           // Wait a bit before trying next preset
           await Future.delayed(const Duration(milliseconds: 300));
         }
       }
 
       if (!initialized) {
-        throw lastError ?? Exception('Gagal menginisialisasi kamera dengan semua preset');
+        throw lastError ??
+            Exception('Gagal menginisialisasi kamera dengan semua preset');
       }
-      
+
       // Set initial flash mode
       try {
         await _controller!.setFlashMode(FlashMode.off);
@@ -236,7 +248,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         debugPrint('Error setting flash mode: $e');
         // Continue even if flash fails
       }
-      
+
       if (mounted && !_isDisposing) {
         setState(() {
           _isCameraReady = true;
@@ -246,13 +258,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     } catch (e) {
       debugPrint('Error initializing camera: $e');
       final errorMsg = e.toString().replaceAll('Exception: ', '');
-      
+
       if (mounted && !_isDisposing) {
         setState(() {
           _errorMessage = errorMsg;
           _isCameraReady = false;
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Gagal mengakses kamera: $errorMsg'),
@@ -310,7 +322,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       _controller = null;
 
       try {
-        if (oldController != null && oldController.value.isInitialized && !_isDisposing) {
+        if (oldController != null &&
+            oldController.value.isInitialized &&
+            !_isDisposing) {
           // Add timeout to prevent hanging
           await oldController.dispose().timeout(
             const Duration(seconds: 3),
@@ -335,7 +349,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       // Try medium preset first for better compatibility
       _controller = CameraController(
         _cameras![_currentCameraIndex],
-        widget.preferLowResolution ? ResolutionPreset.low : ResolutionPreset.medium,
+        widget.preferLowResolution
+            ? ResolutionPreset.low
+            : ResolutionPreset.medium,
         enableAudio: false,
       );
 
@@ -429,7 +445,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
     try {
       // Double check controller is still valid before taking picture
-      if (_controller == null || !_controller!.value.isInitialized || _isDisposing) {
+      if (_controller == null ||
+          !_controller!.value.isInitialized ||
+          _isDisposing) {
         throw Exception('Camera tidak tersedia');
       }
 
@@ -481,7 +499,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         try {
           await _disposeCamera();
         } catch (disposeError) {
-          debugPrint('Error disposing camera after capture error: $disposeError');
+          debugPrint(
+            'Error disposing camera after capture error: $disposeError',
+          );
         }
       }
     }
@@ -495,14 +515,16 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     try {
       // Dispose camera before opening gallery to free resources
       await _disposeCamera();
-      
-      final image = await _imagePicker.pickImage(source: ImageSource.gallery).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception('Timeout saat memilih foto dari galeri');
-        },
-      );
-      
+
+      final image = await _imagePicker
+          .pickImage(source: ImageSource.gallery)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw Exception('Timeout saat memilih foto dari galeri');
+            },
+          );
+
       if (image != null && mounted && !_isDisposing) {
         final file = File(image.path);
         if (await file.exists()) {
@@ -574,24 +596,26 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   double _getResponsiveSize(BuildContext context, double baseSize) {
     final screenWidth = MediaQuery.of(context).size.width;
     final textScale = MediaQuery.of(context).textScaleFactor;
-    
+
     // Adjust untuk device kecil (lebar < 360)
     if (screenWidth < 360) {
       return baseSize * 0.85;
     }
-    
+
     // Adjust untuk text scale yang besar
     if (textScale > 1.3) {
       return baseSize / textScale;
     }
-    
+
     return baseSize;
   }
 
   // Build camera preview dengan scaling yang benar untuk full screen tanpa distorsi
   Widget _buildCameraPreview() {
     // Add safety checks to prevent crashes
-    if (_controller == null || !_controller!.value.isInitialized || _isDisposing) {
+    if (_controller == null ||
+        !_controller!.value.isInitialized ||
+        _isDisposing) {
       return Container(color: Colors.black);
     }
 
@@ -605,9 +629,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       return ClipRect(
         child: Transform.scale(
           scale: scale,
-          child: Center(
-            child: CameraPreview(_controller!),
-          ),
+          child: Center(child: CameraPreview(_controller!)),
         ),
       );
     } catch (e) {
@@ -620,10 +642,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   EdgeInsets _getResponsivePadding(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final textScale = MediaQuery.of(context).textScaleFactor;
-    
+
     double horizontal = 20;
     double vertical = 16;
-    
+
     if (screenWidth < 360) {
       horizontal = 12;
       vertical = 12;
@@ -631,13 +653,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       horizontal = 16;
       vertical = 14;
     }
-    
+
     // Kurangi padding jika text scale besar
     if (textScale > 1.3) {
       horizontal *= 0.9;
       vertical *= 0.9;
     }
-    
+
     return EdgeInsets.symmetric(horizontal: horizontal, vertical: vertical);
   }
 
@@ -645,22 +667,23 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final screenWidth = mediaQuery.size.width;
-    
+
     // Check if camera is ready and controller is valid
     bool isCameraValid = false;
     if (!_isDisposing && !_isInitializing) {
       try {
-        isCameraValid = _isCameraReady &&
-                        _controller != null &&
-                        _controller!.value.isInitialized &&
-                        !_controller!.value.hasError;
+        isCameraValid =
+            _isCameraReady &&
+            _controller != null &&
+            _controller!.value.isInitialized &&
+            !_controller!.value.hasError;
       } catch (e) {
         // Controller might be disposed or in invalid state, treat as invalid
         isCameraValid = false;
         debugPrint('Error checking camera validity: $e');
       }
     }
-    
+
     // Ukuran button yang responsive
     final buttonSize = _getResponsiveSize(context, 44);
     final iconSize = _getResponsiveSize(context, 24);
@@ -668,10 +691,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     final captureIconSize = _getResponsiveSize(context, 40);
     final bottomButtonSize = _getResponsiveSize(context, 60);
     final bottomIconSize = _getResponsiveSize(context, 28);
-    
+
     // Font size yang responsive
     final titleFontSize = _getResponsiveSize(context, 18);
-    
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -679,9 +702,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           children: [
             // Full screen camera preview dengan aspect ratio yang benar
             if (isCameraValid)
-              Positioned.fill(
-                child: _buildCameraPreview(),
-              )
+              Positioned.fill(child: _buildCameraPreview())
             else
               Positioned.fill(
                 child: Container(
@@ -712,7 +733,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                                 ),
                                 const SizedBox(height: 24),
                                 ElevatedButton(
-                                  onPressed: _isInitializing ? null : _initializeCamera,
+                                  onPressed: _isInitializing
+                                      ? null
+                                      : _initializeCamera,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.white,
                                     foregroundColor: Colors.black,
@@ -727,7 +750,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                                           height: 20,
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2,
-                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  Colors.black,
+                                                ),
                                           ),
                                         )
                                       : const Text('Coba Lagi'),
@@ -741,10 +767,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                           const SizedBox(height: 24),
                           const Text(
                             'Menginisialisasi kamera...',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                            ),
+                            style: TextStyle(color: Colors.white, fontSize: 14),
                           ),
                         ],
                       ],
@@ -764,10 +787,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withOpacity(0.7),
-                      Colors.transparent,
-                    ],
+                    colors: [Colors.black.withOpacity(0.7), Colors.transparent],
                   ),
                 ),
                 child: Row(
@@ -795,7 +815,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                     // Title - menggunakan Flexible dan FittedBox untuk mencegah overflow
                     Flexible(
                       child: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: screenWidth < 360 ? 4 : 8),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: screenWidth < 360 ? 4 : 8,
+                        ),
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
@@ -814,9 +836,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                     ),
 
                     // Tombol Flash (hanya untuk kamera belakang)
-                    if (_cameras != null && 
-                        _cameras!.isNotEmpty && 
-                        _cameras![_currentCameraIndex].lensDirection == CameraLensDirection.back)
+                    if (_cameras != null &&
+                        _cameras!.isNotEmpty &&
+                        _cameras![_currentCameraIndex].lensDirection ==
+                            CameraLensDirection.back)
                       GestureDetector(
                         onTap: _toggleFlash,
                         child: Container(
@@ -854,10 +877,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.8),
-                    ],
+                    colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
                   ),
                 ),
                 child: Column(
@@ -887,7 +907,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                             ),
                           )
                         else
-                          SizedBox(width: bottomButtonSize, height: bottomButtonSize),
+                          SizedBox(
+                            width: bottomButtonSize,
+                            height: bottomButtonSize,
+                          ),
 
                         // Spacer untuk memusatkan tombol capture
                         const Expanded(child: SizedBox()),
@@ -915,10 +938,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                             ),
                             child: _isCapturing
                                 ? Padding(
-                                    padding: EdgeInsets.all(_getResponsiveSize(context, 20)),
+                                    padding: EdgeInsets.all(
+                                      _getResponsiveSize(context, 20),
+                                    ),
                                     child: const CircularProgressIndicator(
                                       strokeWidth: 3,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.black,
+                                      ),
                                     ),
                                   )
                                 : Center(
@@ -953,7 +980,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                             ),
                           )
                         else
-                          SizedBox(width: bottomButtonSize, height: bottomButtonSize),
+                          SizedBox(
+                            width: bottomButtonSize,
+                            height: bottomButtonSize,
+                          ),
                       ],
                     ),
 
