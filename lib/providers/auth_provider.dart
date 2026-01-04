@@ -157,5 +157,86 @@ class AuthProvider with ChangeNotifier {
   Future<void> refreshUser() async {
     await _checkAuthStatus();
   }
+
+  /// Request password reset - kirim OTP ke email
+  Future<bool> requestPasswordReset(String email) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final result = await _authService.requestPasswordReset(email);
+      if (result['success'] == true) {
+        _error = null;
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = result['message'] as String? ?? 'Gagal mengirim OTP';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = ErrorHandler.getErrorMessage(e);
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Verify OTP code
+  Future<bool> verifyOTP(String email, String otpCode) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final result = await _authService.verifyOTP(email, otpCode);
+      if (result['success'] == true) {
+        _error = null;
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = result['message'] as String? ?? 'OTP tidak valid';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = ErrorHandler.getErrorMessage(e);
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Reset password dengan OTP yang sudah diverifikasi
+  Future<bool> resetPassword(String email, String otpCode, String newPassword) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final result = await _authService.resetPassword(email, otpCode, newPassword);
+      if (result['success'] == true) {
+        _error = null;
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      } else {
+        _error = result['message'] as String? ?? 'Gagal mereset password';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _error = ErrorHandler.getErrorMessage(e);
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
 }
 

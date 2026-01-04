@@ -34,6 +34,11 @@ class ApiConfig {
   // API Endpoints
   static const String login = '/api/auth/login';
   static const String session = '/api/session';
+
+  // Password Reset Endpoints
+  static const String forgotPassword = '/api/auth/forgot-password';
+  static const String verifyOTP = '/api/auth/verify-otp';
+  static const String resetPassword = '/api/auth/reset-password';
   
   // Employee endpoints
   static const String attendance = '/api/ess/attendance';

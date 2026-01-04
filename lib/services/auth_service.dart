@@ -157,6 +157,129 @@ class AuthService {
     }
   }
 
+  /// Request password reset - kirim OTP ke email
+  Future<Map<String, dynamic>> requestPasswordReset(String email) async {
+    try {
+      final response = await _apiService.post(
+        ApiConfig.forgotPassword,
+        data: {
+          'email': email, // Bisa berupa email atau NIK KTP
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'message': response.data['message'] ?? 'OTP telah dikirim ke email Anda',
+        };
+      } else {
+        throw Exception(response.data['message'] ?? 'Gagal mengirim OTP');
+      }
+    } catch (e) {
+      String errorMessage = 'Gagal mengirim OTP';
+      if (e is DioException) {
+        if (e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout ||
+            e.type == DioExceptionType.sendTimeout) {
+          errorMessage = 'Koneksi timeout. Pastikan backend server berjalan dan dapat diakses.';
+        } else if (e.type == DioExceptionType.connectionError) {
+          errorMessage = 'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
+        } else {
+          errorMessage = e.message ?? 'Gagal mengirim OTP';
+        }
+      } else {
+        errorMessage = e.toString().replaceAll('Exception: ', '');
+      }
+      return {
+        'success': false,
+        'message': errorMessage,
+      };
+    }
+  }
+
+  /// Verify OTP code
+  Future<Map<String, dynamic>> verifyOTP(String email, String otpCode) async {
+    try {
+      final response = await _apiService.post(
+        ApiConfig.verifyOTP,
+        data: {
+          'email': email,
+          'otp': otpCode,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'message': response.data['message'] ?? 'OTP berhasil diverifikasi',
+        };
+      } else {
+        throw Exception(response.data['message'] ?? 'OTP tidak valid');
+      }
+    } catch (e) {
+      String errorMessage = 'OTP tidak valid';
+      if (e is DioException) {
+        if (e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout ||
+            e.type == DioExceptionType.sendTimeout) {
+          errorMessage = 'Koneksi timeout. Pastikan backend server berjalan dan dapat diakses.';
+        } else if (e.type == DioExceptionType.connectionError) {
+          errorMessage = 'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
+        } else {
+          errorMessage = e.message ?? 'OTP tidak valid';
+        }
+      } else {
+        errorMessage = e.toString().replaceAll('Exception: ', '');
+      }
+      return {
+        'success': false,
+        'message': errorMessage,
+      };
+    }
+  }
+
+  /// Reset password dengan OTP yang sudah diverifikasi
+  Future<Map<String, dynamic>> resetPassword(String email, String otpCode, String newPassword) async {
+    try {
+      final response = await _apiService.post(
+        ApiConfig.resetPassword,
+        data: {
+          'email': email,
+          'otp': otpCode,
+          'password': newPassword,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'message': response.data['message'] ?? 'Password berhasil direset',
+        };
+      } else {
+        throw Exception(response.data['message'] ?? 'Gagal mereset password');
+      }
+    } catch (e) {
+      String errorMessage = 'Gagal mereset password';
+      if (e is DioException) {
+        if (e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout ||
+            e.type == DioExceptionType.sendTimeout) {
+          errorMessage = 'Koneksi timeout. Pastikan backend server berjalan dan dapat diakses.';
+        } else if (e.type == DioExceptionType.connectionError) {
+          errorMessage = 'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
+        } else {
+          errorMessage = e.message ?? 'Gagal mereset password';
+        }
+      } else {
+        errorMessage = e.toString().replaceAll('Exception: ', '');
+      }
+      return {
+        'success': false,
+        'message': errorMessage,
+      };
+    }
+  }
+
   Future<bool> isLoggedIn() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_isLoggedInKey) ?? false;
