@@ -160,10 +160,14 @@ class AuthService {
   /// Request password reset - kirim OTP ke email
   Future<Map<String, dynamic>> requestPasswordReset(String email) async {
     try {
+      // Normalize email: trim (untuk NIK KTP, tidak lowercase karena bisa angka)
+      // Backend akan handle lowercase untuk email dan normalization untuk NIK
+      final normalizedEmail = email.trim();
+      
       final response = await _apiService.post(
         ApiConfig.forgotPassword,
         data: {
-          'email': email, // Bisa berupa email atau NIK KTP
+          'email': normalizedEmail, // Bisa berupa email atau NIK KTP
         },
       );
 
@@ -200,11 +204,14 @@ class AuthService {
   /// Verify OTP code
   Future<Map<String, dynamic>> verifyOTP(String email, String otpCode) async {
     try {
+      // Normalize email: trim and lowercase (sama seperti di backend)
+      final normalizedEmail = email.trim().toLowerCase();
+      
       final response = await _apiService.post(
         ApiConfig.verifyOTP,
         data: {
-          'email': email,
-          'otp': otpCode,
+          'email': normalizedEmail,
+          'otp': otpCode.trim(),
         },
       );
 

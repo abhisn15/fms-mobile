@@ -1043,6 +1043,8 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                     if (!hasCheckedIn)
                       _buildCheckInButton(context)
                     else if (!hasCheckedOut)
+                      // Tombol checkout muncul selama sudah check-in dan belum check-out
+                      // (tidak peduli sudah melewati midnight atau tidak)
                       _buildCheckOutButton(context)
                     else
                       Container(
@@ -1228,7 +1230,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     final hasGeofence = site?.latitude != null && site?.longitude != null && radius != null;
     final actionLabel = forCheckOut ? 'check-out' : 'check-in';
 
-    if (hasGeofence && radius != null) {
+    if (hasGeofence) {
       final placementName = _resolvePlacementName(site?.name);
       final locationLabel = placementName ?? 'lokasi penempatan';
       return 'GPS wajib aktif. Anda harus berada dalam radius ${radius}m dari $locationLabel untuk $actionLabel.';
