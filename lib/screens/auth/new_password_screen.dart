@@ -226,12 +226,13 @@ class _NewPasswordScreenState extends State<NewPasswordScreen> {
                             width: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text(
-                            'Reset Password',
-                            style: TextStyle(fontSize: 16),
+                        : const Center(
+                            child: Text(
+                              'Reset Password',
+                              style: TextStyle(fontSize: 16),
+                            ),
                           ),
-                  ),
-                ),
+                )),
                 const SizedBox(height: 16),
                 // Password Requirements Info
                 Container(
