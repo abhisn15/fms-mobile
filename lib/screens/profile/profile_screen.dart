@@ -236,19 +236,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         return;
       }
       
-      if (newPassword.length < 6) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Password minimal 6 karakter'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        setState(() {
-          _isUpdating = false;
-        });
-        return;
-      }
-      
+      // ✅ Validasi sederhana: hanya cek password dan konfirmasi cocok, tanpa persyaratan kompleks
       if (newPassword != confirmPassword) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

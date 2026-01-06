@@ -158,7 +158,6 @@ class _ForcePasswordScreenState extends State<ForcePasswordScreen> {
                         obscureText: _obscureNewPassword,
                         decoration: InputDecoration(
                           labelText: 'Password Baru',
-                          hintText: 'Minimal 6 karakter',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -179,9 +178,7 @@ class _ForcePasswordScreenState extends State<ForcePasswordScreen> {
                           if (value == null || value.isEmpty) {
                             return 'Password baru wajib diisi';
                           }
-                          if (value.length < 6) {
-                            return 'Password minimal 6 karakter';
-                          }
+                          // ✅ Validasi sederhana: hanya cek tidak kosong, tanpa persyaratan kompleks
                           return null;
                         },
                       ),

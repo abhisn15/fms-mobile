@@ -92,12 +92,7 @@ class _NewPasswordScreenState extends State<NewPasswordScreen> {
     if (value == null || value.isEmpty) {
       return 'Password wajib diisi';
     }
-    if (value.length < 8) {
-      return 'Password minimal 8 karakter';
-    }
-    if (!RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)').hasMatch(value)) {
-      return 'Password harus mengandung huruf besar, huruf kecil, dan angka';
-    }
+    // ✅ Validasi sederhana: hanya cek tidak kosong, tanpa persyaratan kompleks
     return null;
   }
 
@@ -149,7 +144,7 @@ class _NewPasswordScreenState extends State<NewPasswordScreen> {
                 const SizedBox(height: 16),
                 // Description
                 Text(
-                  'Masukkan password baru yang aman untuk akun Anda.',
+                  'Masukkan password baru untuk akun Anda.',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Colors.grey[600],
                       ),
@@ -176,8 +171,6 @@ class _NewPasswordScreenState extends State<NewPasswordScreen> {
                       },
                     ),
                     border: const OutlineInputBorder(),
-                    helperText: 'Minimal 8 karakter dengan kombinasi huruf besar, kecil, dan angka',
-                    helperMaxLines: 2,
                   ),
                   validator: _validatePassword,
                   onChanged: (value) {
@@ -233,38 +226,6 @@ class _NewPasswordScreenState extends State<NewPasswordScreen> {
                             ),
                           ),
                 )),
-                const SizedBox(height: 16),
-                // Password Requirements Info
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue[200]!),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '📋 Persyaratan Password:',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue[800],
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '• Minimal 8 karakter\n• Mengandung huruf besar (A-Z)\n• Mengandung huruf kecil (a-z)\n• Mengandung angka (0-9)',
-                        style: TextStyle(
-                          color: Colors.blue[700],
-                          fontSize: 12,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),

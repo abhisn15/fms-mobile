@@ -85,7 +85,7 @@ class _SetPasswordDialogState extends State<SetPasswordDialog> {
                 obscureText: _obscureNewPassword,
                 decoration: InputDecoration(
                   labelText: 'Password Baru',
-                  hintText: 'Masukkan password baru (minimal 6 karakter)',
+                  hintText: 'Masukkan password baru',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -104,9 +104,7 @@ class _SetPasswordDialogState extends State<SetPasswordDialog> {
                   if (value == null || value.isEmpty) {
                     return 'Password baru wajib diisi';
                   }
-                  if (value.length < 6) {
-                    return 'Password minimal 6 karakter';
-                  }
+                  // ✅ Validasi sederhana: hanya cek tidak kosong, tanpa persyaratan kompleks
                   return null;
                 },
               ),
