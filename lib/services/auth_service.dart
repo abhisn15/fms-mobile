@@ -55,7 +55,13 @@ class AuthService {
         } else if (e.type == DioExceptionType.connectionError) {
           errorMessage = 'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
         } else {
-          errorMessage = e.message ?? 'Login gagal';
+          // ✅ Ambil error message dari response backend
+          final responseData = e.response?.data;
+          if (responseData is Map && responseData['message'] != null) {
+            errorMessage = responseData['message'].toString();
+          } else {
+            errorMessage = e.message ?? 'Login gagal';
+          }
         }
       } else {
         errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -189,7 +195,13 @@ class AuthService {
         } else if (e.type == DioExceptionType.connectionError) {
           errorMessage = 'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
         } else {
-          errorMessage = e.message ?? 'Gagal mengirim OTP';
+          // ✅ Ambil error message dari response backend
+          final responseData = e.response?.data;
+          if (responseData is Map && responseData['message'] != null) {
+            errorMessage = responseData['message'].toString();
+          } else {
+            errorMessage = e.message ?? 'Gagal mengirim OTP';
+          }
         }
       } else {
         errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -233,7 +245,13 @@ class AuthService {
         } else if (e.type == DioExceptionType.connectionError) {
           errorMessage = 'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
         } else {
-          errorMessage = e.message ?? 'OTP tidak valid';
+          // ✅ Ambil error message dari response backend
+          final responseData = e.response?.data;
+          if (responseData is Map && responseData['message'] != null) {
+            errorMessage = responseData['message'].toString();
+          } else {
+            errorMessage = e.message ?? 'OTP tidak valid';
+          }
         }
       } else {
         errorMessage = e.toString().replaceAll('Exception: ', '');
@@ -275,7 +293,13 @@ class AuthService {
         } else if (e.type == DioExceptionType.connectionError) {
           errorMessage = 'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
         } else {
-          errorMessage = e.message ?? 'Gagal mereset password';
+          // ✅ Ambil error message dari response backend
+          final responseData = e.response?.data;
+          if (responseData is Map && responseData['message'] != null) {
+            errorMessage = responseData['message'].toString();
+          } else {
+            errorMessage = e.message ?? 'Gagal mereset password';
+          }
         }
       } else {
         errorMessage = e.toString().replaceAll('Exception: ', '');
