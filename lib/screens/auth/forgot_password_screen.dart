@@ -31,18 +31,20 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     });
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final success = await authProvider.requestPasswordReset(_emailController.text.trim());
+    final result = await authProvider.requestPasswordReset(_emailController.text.trim());
 
     if (mounted) {
       setState(() {
         _isLoading = false;
       });
 
-      if (success) {
+      if (result['success'] == true) {
         // ✅ Email/NIK terdaftar, lanjut ke halaman OTP
+        // ✅ Gunakan email dari backend (jika input NIK, ini adalah email user yang terkait)
+        final userEmail = result['email'] as String? ?? _emailController.text.trim();
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (_) => OTPVerificationScreen(email: _emailController.text.trim()),
+            builder: (_) => OTPVerificationScreen(email: userEmail),
           ),
         );
       } else {

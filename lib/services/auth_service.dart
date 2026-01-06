@@ -181,6 +181,7 @@ class AuthService {
         return {
           'success': true,
           'message': response.data['message'] ?? 'OTP telah dikirim ke email Anda',
+          'email': response.data['email'], // ✅ Email dari backend (jika input NIK, ini adalah email user yang terkait)
         };
       } else {
         // ✅ Handle semua status code error (400, 404, 500, dll)

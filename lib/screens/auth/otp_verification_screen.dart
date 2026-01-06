@@ -106,14 +106,14 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
     });
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final success = await authProvider.requestPasswordReset(widget.email);
+    final result = await authProvider.requestPasswordReset(widget.email);
 
     if (mounted) {
       setState(() {
         _isResendLoading = false;
       });
 
-      if (success) {
+      if (result['success'] == true) {
         _startResendTimer();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -165,12 +165,14 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
               ),
               const SizedBox(height: 24),
               // Title
-              Text(
-                'Verifikasi Kode OTP',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                textAlign: TextAlign.center,
+              Center(
+                child: Text(
+                  'Verifikasi Kode OTP',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
               ),
               const SizedBox(height: 16),
               // Description

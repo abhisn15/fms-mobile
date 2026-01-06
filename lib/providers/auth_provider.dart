@@ -173,7 +173,8 @@ class AuthProvider with ChangeNotifier {
   }
 
   /// Request password reset - kirim OTP ke email
-  Future<bool> requestPasswordReset(String email) async {
+  /// Returns Map dengan 'success' dan 'email' (email dari backend, bukan input user)
+  Future<Map<String, dynamic>> requestPasswordReset(String email) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -184,18 +185,27 @@ class AuthProvider with ChangeNotifier {
         _error = null;
         _isLoading = false;
         notifyListeners();
-        return true;
+        return {
+          'success': true,
+          'email': result['email'] as String?, // ✅ Email dari backend (jika input NIK, ini adalah email user)
+        };
       } else {
         _error = result['message'] as String? ?? 'Gagal mengirim OTP';
         _isLoading = false;
         notifyListeners();
-        return false;
+        return {
+          'success': false,
+          'email': null,
+        };
       }
     } catch (e) {
       _error = ErrorHandler.getErrorMessage(e);
       _isLoading = false;
       notifyListeners();
-      return false;
+      return {
+        'success': false,
+        'email': null,
+      };
     }
   }
 
