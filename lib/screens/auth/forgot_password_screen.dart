@@ -39,16 +39,40 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       });
 
       if (success) {
+        // ✅ Email/NIK terdaftar, lanjut ke halaman OTP
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (_) => OTPVerificationScreen(email: _emailController.text.trim()),
           ),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(authProvider.error ?? 'Gagal mengirim OTP'),
-            backgroundColor: Colors.red,
+        // ✅ Email/NIK tidak terdaftar, tampilkan alert dialog
+        final errorMessage = authProvider.error ?? 'Gagal mengirim OTP';
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: const Text(
+              'Email atau NIK Tidak Terdaftar',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.red,
+              ),
+            ),
+            content: Text(
+              errorMessage.contains('tidak terdaftar') 
+                ? errorMessage 
+                : 'Email atau NIK tidak terdaftar. Silakan perhatikan lagi dan masukkan email/NIK yang benar dan sesuai.',
+              style: const TextStyle(fontSize: 14),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // Tutup dialog
+                },
+                child: const Text('OK'),
+              ),
+            ],
           ),
         );
       }

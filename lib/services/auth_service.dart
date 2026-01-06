@@ -183,7 +183,13 @@ class AuthService {
           'message': response.data['message'] ?? 'OTP telah dikirim ke email Anda',
         };
       } else {
-        throw Exception(response.data['message'] ?? 'Gagal mengirim OTP');
+        // ✅ Handle semua status code error (400, 404, 500, dll)
+        // Throw DioException agar error handling di catch block bisa mengambil message dari response
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          type: DioExceptionType.badResponse,
+        );
       }
     } catch (e) {
       String errorMessage = 'Gagal mengirim OTP';
