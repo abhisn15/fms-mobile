@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/global_update_checker.dart';
 import '../profile/profile_screen.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/attendance_provider.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -218,6 +217,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return true;
   }
 
+  Future<void> _contactSupport() async {
+    const whatsappUrl = 'https://wa.me/6285174200764';
+    final uri = Uri.parse(whatsappUrl);
+    
+    try {
+      // Gunakan URL link langsung, akan membuka di browser atau WhatsApp jika terinstall
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal membuka link: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -354,6 +371,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // About Section
           _buildSectionHeader('Tentang'),
+          ListTile(
+            leading: const Icon(Icons.support_agent, color: Colors.green),
+            title: const Text('Hubungi Support'),
+            subtitle: const Text('Hubungi developer via WhatsApp'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _contactSupport,
+          ),
           ListTile(
             leading: const Icon(Icons.email, color: Colors.blue),
             title: const Text('Kontak'),

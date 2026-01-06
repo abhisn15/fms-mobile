@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/background_tracking_service.dart';
 import '../services/tracking_state_service.dart';
 import '../services/version_service.dart';
+import '../services/persistent_notification_service.dart';
 import '../utils/error_handler.dart';
 
 class AuthProvider with ChangeNotifier {
@@ -114,8 +115,21 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> logout() async {
     debugPrint('[AuthProvider] Logging out...');
+    
+    // Stop all tracking services
     await TrackingStateService.clearTrackingState();
     await BackgroundTrackingService.stop();
+    
+    // Hide check-in notification and stop periodic updates
+    try {
+      await PersistentNotificationService.hideCheckInNotification();
+      PersistentNotificationService.stopPeriodicUpdates();
+      debugPrint('[AuthProvider] ✓ Check-in notification cleared');
+    } catch (e) {
+      debugPrint('[AuthProvider] ⚠️ Failed to clear check-in notification: $e');
+      // Don't fail logout just because notification clear failed
+    }
+    
     await _authService.logout();
     _user = null;
     _error = null;

@@ -203,16 +203,16 @@ class PersistentNotificationService {
     }
   }
 
-  /// Start periodic updates for notification (every 5 minutes to save battery)
+  /// Start periodic updates for notification (every 10 minutes to update duration)
   static Timer? _updateTimer;
   static void startPeriodicUpdates(AttendanceRecord todayRecord) {
     stopPeriodicUpdates(); // Stop any existing timer
 
-    _updateTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+    _updateTimer = Timer.periodic(const Duration(minutes: 10), (_) {
       updateCheckInNotification(todayRecord);
     });
 
-    debugPrint('[PersistentNotification] Periodic updates started (every 5 minutes)');
+    debugPrint('[PersistentNotification] Periodic updates started (every 10 minutes)');
   }
 
   /// Stop periodic updates

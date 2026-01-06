@@ -267,7 +267,7 @@ class RealtimeLocationService {
         }
         
         // Kirim log untuk lokasi baru (entry point baru)
-        await _sendLocationToServer(position);
+      await _sendLocationToServer(position);
       }
 
     } catch (e) {
@@ -291,13 +291,13 @@ class RealtimeLocationService {
     }
 
     // Hitung jarak dari entry point lokasi saat ini
-    double distance = geolocator.Geolocator.distanceBetween(
+        double distance = geolocator.Geolocator.distanceBetween(
       _currentLocationEntryLat!,
       _currentLocationEntryLng!,
       latitude,
       longitude,
-    );
-
+        );
+        
     // Jika jarak > 25m dari entry point, reset timer dan mulai lokasi baru
     // SETIAP PINDAH KOORDINAT (jarak > 25m) = RESET TIMER KE 0
     if (distance > RADIUS_THRESHOLD) {
@@ -338,7 +338,7 @@ class RealtimeLocationService {
     if (minutesInLocation > 0 && minutesInLocation % 5 == 0) {
       debugPrint('[RealtimeLocationService] ⏱️ Timer: $minutesInLocation min (distance: ${distance.toStringAsFixed(1)}m)');
     }
-    
+
     return false; // Masih dalam radius, tidak kirim log
   }
 
@@ -443,7 +443,7 @@ class RealtimeLocationService {
         'entryLongitude': _currentLocationEntryLng,
       },
     };
-  }
+    }
 
 
   // Sync pending location logs

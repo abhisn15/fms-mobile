@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
-import 'dart:async' as async;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
@@ -279,7 +279,7 @@ class _DeveloperOptionsWrapperState extends State<DeveloperOptionsWrapper> with 
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Cek developer options saat widget pertama kali dibuat
+    // Cek mock location saat widget pertama kali dibuat
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkDeveloperOptions();
       _startPeriodicCheck();
@@ -295,34 +295,66 @@ class _DeveloperOptionsWrapperState extends State<DeveloperOptionsWrapper> with 
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Cek developer options setiap kali app kembali ke foreground
+    // Cek mock location setiap kali app kembali ke foreground
     if (state == AppLifecycleState.resumed) {
       _checkDeveloperOptions();
     }
   }
 
   void _startPeriodicCheck() {
-    // Cek developer options setiap 30 detik
-    _periodicCheckTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    // Cek mock location setiap 5 detik untuk memastikan modal muncul terus jika fake GPS aktif
+    _periodicCheckTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (mounted) {
         _checkDeveloperOptions();
       }
     });
   }
 
-  void _checkDeveloperOptions() {
+  void _checkDeveloperOptions() async {
+    if (!mounted) return;
+    
     final developerProvider = Provider.of<DeveloperOptionsProvider>(context, listen: false);
-    if (developerProvider.isDeveloperOptionsEnabled && !_dialogShown && mounted) {
-      _dialogShown = true;
-      DeveloperOptionsWarningDialog.show(context).then((_) {
-        // Dialog ditutup, reset flag agar bisa ditampilkan lagi jika masih aktif
+    
+    // Refresh status dari native Android
+    await developerProvider.refreshStatus();
+    
+    // Cek status setelah refresh
+    final isSecurityRisk = developerProvider.isSecurityRisk;
+    
+    debugPrint('[DeveloperOptionsWrapper] Security risk: $isSecurityRisk, Dialog shown: $_dialogShown');
+    
+    // Jika sudah tidak ada security risk, pastikan flag di-reset dan tidak ada dialog
+    if (!isSecurityRisk) {
+      if (_dialogShown) {
+        debugPrint('[DeveloperOptionsWrapper] Security risk cleared, resetting dialog flag');
         _dialogShown = false;
-        // Cek ulang setelah dialog ditutup
-        Future.delayed(const Duration(seconds: 2), () {
+        // Tutup dialog jika masih terbuka
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+      }
+      return; // Tidak perlu tampilkan dialog jika tidak ada security risk
+    }
+    
+    // Jika ada security risk dan dialog belum ditampilkan, tampilkan dialog
+    if (isSecurityRisk && !_dialogShown && mounted) {
+      debugPrint('[DeveloperOptionsWrapper] Showing security warning dialog');
+      _dialogShown = true;
+      
+      // Tampilkan dialog dengan informasi lengkap (hanya untuk mock location)
+      DeveloperOptionsWarningDialog.show(
+        context,
+        isDeveloperOptionsEnabled: false, // Tidak perlu check developer options
+        isMockLocationEnabled: developerProvider.isMockLocationEnabled,
+      ).then((_) {
+        // Dialog ditutup, reset flag
+        debugPrint('[DeveloperOptionsWrapper] Dialog closed, resetting flag');
+        _dialogShown = false;
+        
+        // Cek ulang setelah dialog ditutup untuk memastikan status terbaru
+        Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted) {
-            developerProvider.refreshStatus().then((_) {
-              _checkDeveloperOptions();
-            });
+            _checkDeveloperOptions(); // Re-check immediately
           }
         });
       });
@@ -333,8 +365,8 @@ class _DeveloperOptionsWrapperState extends State<DeveloperOptionsWrapper> with 
   Widget build(BuildContext context) {
     return Consumer<DeveloperOptionsProvider>(
       builder: (context, developerProvider, child) {
-        // Cek developer options setiap kali provider berubah
-        if (developerProvider.isDeveloperOptionsEnabled && !_dialogShown) {
+        // Cek security risk (mock location) setiap kali provider berubah
+        if (developerProvider.isSecurityRisk && !_dialogShown) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _checkDeveloperOptions();
           });
@@ -375,6 +407,15 @@ class AuthWrapper extends StatelessWidget {
         // Auto redirect ke login jika tidak authenticated
         if (!authProvider.isLoading && !authProvider.isAuthenticated) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
+            // Clear check-in notification jika user tidak authenticated
+            try {
+              PersistentNotificationService.hideCheckInNotification();
+              PersistentNotificationService.stopPeriodicUpdates();
+              debugPrint('[AuthWrapper] ✓ Check-in notification cleared (user not authenticated)');
+            } catch (e) {
+              debugPrint('[AuthWrapper] ⚠️ Failed to clear check-in notification: $e');
+            }
+            
             if (navigatorKey.currentContext != null) {
               Navigator.of(navigatorKey.currentContext!).pushNamedAndRemoveUntil(
                 '/login',
