@@ -261,6 +261,19 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
           checkInMinute,
           checkInSecond,
         );
+        
+        // Handle overnight shift: jika waktu check-in > waktu sekarang,
+        // berarti check-in terjadi kemarin (melewati tengah malam)
+        // Contoh: check-in 23:01 kemarin, sekarang 00:10 hari ini
+        final nowTime = now.hour * 60 + now.minute;
+        final checkInTimeMinutes = checkInHour * 60 + checkInMinute;
+        
+        // Jika check-in time > sekarang, berarti kemungkinan besar check-in kemarin
+        if (checkInTimeMinutes > nowTime) {
+          // Kurangi 1 hari untuk overnight shift
+          checkInDate = checkInDate.subtract(const Duration(days: 1));
+          debugPrint('[HomeTab] Overnight shift: check-in $checkInTime > now $nowTime, using yesterday date');
+        }
       } catch (e) {
         // Fallback to current date
         checkInDate = DateTime(
@@ -271,6 +284,14 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
           checkInMinute,
           checkInSecond,
         );
+        
+        // Handle overnight shift untuk fallback juga
+        final nowTime = now.hour * 60 + now.minute;
+        final checkInTimeMinutes = checkInHour * 60 + checkInMinute;
+        if (checkInTimeMinutes > nowTime) {
+          checkInDate = checkInDate.subtract(const Duration(days: 1));
+          debugPrint('[HomeTab] Overnight shift (fallback): check-in $checkInTime > now $nowTime, using yesterday date');
+        }
       }
       
       return checkInDate;

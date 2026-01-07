@@ -9,6 +9,7 @@ class PersistentNotificationService {
   static const String _channelName = 'Status Check-in';
   static const String _channelDescription = 'Notifikasi status check-in aktif';
   static const int _notificationId = 999; // Unique ID for persistent notification
+  static const Duration _updateInterval = Duration(minutes: 5); // Update notification every 5 minutes
 
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
@@ -117,6 +118,9 @@ class PersistentNotificationService {
   static Future<void> updateCheckInNotification(AttendanceRecord todayRecord) async {
     if (todayRecord.checkIn == null) return;
 
+    // Update stored record for periodic updates
+    _currentRecord = todayRecord;
+    
     await showCheckInNotification(todayRecord);
     debugPrint('[PersistentNotification] Check-in notification updated');
   }
@@ -171,7 +175,7 @@ class PersistentNotificationService {
         // ISO format or full date format
         checkIn = DateTime.parse(checkInTime);
       } else if (checkInTime.contains(':')) {
-        // HH:MM format - assume today's date
+        // HH:MM format - handle overnight shift
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
         final timeParts = checkInTime.split(':');
@@ -179,6 +183,18 @@ class PersistentNotificationService {
           final hour = int.tryParse(timeParts[0]) ?? 0;
           final minute = int.tryParse(timeParts[1]) ?? 0;
           checkIn = DateTime(today.year, today.month, today.day, hour, minute);
+          
+          // Handle overnight shift: jika waktu check-in > waktu sekarang,
+          // berarti check-in terjadi kemarin (melewati tengah malam)
+          // Contoh: check-in 23:01 kemarin, sekarang 00:10 hari ini
+          final nowTime = now.hour * 60 + now.minute;
+          final checkInTimeMinutes = hour * 60 + minute;
+          
+          if (checkInTimeMinutes > nowTime) {
+            // Kurangi 1 hari untuk overnight shift
+            checkIn = checkIn.subtract(const Duration(days: 1));
+            debugPrint('[PersistentNotification] Overnight shift: check-in $checkInTime > now ${now.hour}:${now.minute}, using yesterday date');
+          }
         } else {
           return 'Unknown';
         }
@@ -188,6 +204,24 @@ class PersistentNotificationService {
 
       final now = DateTime.now();
       final difference = now.difference(checkIn);
+      
+      // Handle negative duration (shouldn't happen after fix, but just in case)
+      if (difference.isNegative) {
+        debugPrint('[PersistentNotification] ⚠️ Negative duration detected, fixing...');
+        // Try with yesterday date
+        final checkInYesterday = checkIn.subtract(const Duration(days: 1));
+        final diffFixed = now.difference(checkInYesterday);
+        if (diffFixed.isNegative) {
+          return '0m'; // Still negative, return 0
+        }
+        final hours = diffFixed.inHours;
+        final minutes = diffFixed.inMinutes.remainder(60);
+        if (hours > 0) {
+          return '${hours}j ${minutes}m';
+        } else {
+          return '${minutes}m';
+        }
+      }
 
       final hours = difference.inHours;
       final minutes = difference.inMinutes.remainder(60);
@@ -203,16 +237,27 @@ class PersistentNotificationService {
     }
   }
 
-  /// Start periodic updates for notification (every 10 minutes to update duration)
+  /// Start periodic updates for notification (every 5 minutes to update duration)
   static Timer? _updateTimer;
+  static AttendanceRecord? _currentRecord; // Store current record for periodic updates
+  
   static void startPeriodicUpdates(AttendanceRecord todayRecord) {
     stopPeriodicUpdates(); // Stop any existing timer
+    _currentRecord = todayRecord; // Store current record
 
-    _updateTimer = Timer.periodic(const Duration(minutes: 10), (_) {
-      updateCheckInNotification(todayRecord);
+    _updateTimer = Timer.periodic(_updateInterval, (_) {
+      // Reload latest attendance data if available, otherwise use stored record
+      if (_currentRecord != null) {
+        updateCheckInNotification(_currentRecord!);
+      }
     });
 
-    debugPrint('[PersistentNotification] Periodic updates started (every 10 minutes)');
+    debugPrint('[PersistentNotification] Periodic updates started (every ${_updateInterval.inMinutes} minutes)');
+  }
+  
+  /// Update the stored record for periodic updates (called when attendance changes)
+  static void updateStoredRecord(AttendanceRecord todayRecord) {
+    _currentRecord = todayRecord;
   }
 
   /// Stop periodic updates
