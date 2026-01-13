@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:geolocator/geolocator.dart';
 import '../config/api_config.dart';
 import '../models/attendance_model.dart';
@@ -12,6 +15,10 @@ import 'api_service.dart';
 
 class AttendanceService {
   final ApiService _apiService = ApiService();
+  static final DeviceInfoPlugin _deviceInfoPlugin = DeviceInfoPlugin();
+  Map<String, dynamic>? _deviceInfoCache;
+  Map<String, dynamic>? _appInfoCache;
+  bool _isClientInfoLoading = false;
 
   void _validateGeofence({
     required Site? site,
@@ -42,6 +49,75 @@ class AttendanceService {
         'Pindah ke area penempatan untuk $actionLabel.',
       );
     }
+  }
+
+  Future<Map<String, dynamic>> _getClientMeta() async {
+    if (_deviceInfoCache != null && _appInfoCache != null) {
+      return {
+        'device': _deviceInfoCache,
+        'app': _appInfoCache,
+      };
+    }
+    if (_isClientInfoLoading) {
+      return {
+        'device': _deviceInfoCache,
+        'app': _appInfoCache,
+      };
+    }
+    _isClientInfoLoading = true;
+    try {
+      _deviceInfoCache ??= await _loadDeviceInfo();
+      _appInfoCache ??= await _loadAppInfo();
+    } catch (e) {
+      debugPrint('[AttendanceService] Failed to load client meta: $e');
+    } finally {
+      _isClientInfoLoading = false;
+    }
+    return {
+      'device': _deviceInfoCache,
+      'app': _appInfoCache,
+    };
+  }
+
+  Future<Map<String, dynamic>> _loadDeviceInfo() async {
+    if (Platform.isAndroid) {
+      final info = await _deviceInfoPlugin.androidInfo;
+      return {
+        'platform': 'android',
+        'brand': info.brand,
+        'model': info.model,
+        'device': info.device,
+        'manufacturer': info.manufacturer,
+        'version': info.version.release,
+        'sdkInt': info.version.sdkInt,
+        'isPhysicalDevice': info.isPhysicalDevice,
+      };
+    }
+    if (Platform.isIOS) {
+      final info = await _deviceInfoPlugin.iosInfo;
+      return {
+        'platform': 'ios',
+        'name': info.name,
+        'model': info.model,
+        'systemName': info.systemName,
+        'systemVersion': info.systemVersion,
+        'isPhysicalDevice': info.isPhysicalDevice,
+      };
+    }
+    return {
+      'platform': Platform.operatingSystem,
+      'version': Platform.operatingSystemVersion,
+    };
+  }
+
+  Future<Map<String, dynamic>> _loadAppInfo() async {
+    final info = await PackageInfo.fromPlatform();
+    return {
+      'name': info.appName,
+      'package': info.packageName,
+      'version': info.version,
+      'buildNumber': info.buildNumber,
+    };
   }
 
   Future<Map<String, double>> getRequiredLocation({required String actionLabel}) async {
@@ -99,7 +175,9 @@ class AttendanceService {
       final response = await _apiService.get(url);
       if (response.statusCode == 200) {
         debugPrint('[AttendanceService] ✓ Attendance data loaded successfully');
-        final payload = AttendancePayload.fromJson(response.data['data']);
+        final normalizedResponse = _normalizeApiResponse(response.data);
+        final payloadJson = _extractAttendancePayload(normalizedResponse);
+        final payload = AttendancePayload.fromJson(payloadJson);
         debugPrint('[AttendanceService] Today: ${payload.today?.status ?? 'null'}, History count: ${payload.recent.length}');
         // Log semua status untuk debugging
         for (var record in payload.recent) {
@@ -125,6 +203,99 @@ class AttendanceService {
       debugPrint('[AttendanceService] ✗ Exception: $e');
       rethrow;
     }
+  }
+
+  dynamic _normalizeApiResponse(dynamic data) {
+    if (data is String) {
+      final trimmed = data.trim();
+      if (trimmed.isEmpty) {
+        return <String, dynamic>{};
+      }
+      try {
+        return jsonDecode(trimmed);
+      } catch (e) {
+        debugPrint('[AttendanceService] Gagal decode response string: $e');
+        return data;
+      }
+    }
+    return data;
+  }
+
+  Map<String, dynamic> _extractAttendancePayload(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      final extracted = _tryExtractDataField(data['data']);
+      if (extracted != null) {
+        return extracted;
+      }
+      return data;
+    }
+    if (data is Map) {
+      return _extractAttendancePayload(Map<String, dynamic>.from(data));
+    }
+    if (data is List) {
+      debugPrint('[AttendanceService] Attendance response provided as list, wrapping as history');
+      return _wrapHistory(data);
+    }
+    throw Exception('Unexpected attendance response format: ${data.runtimeType}');
+  }
+
+  Map<String, dynamic>? _tryExtractDataField(dynamic candidate) {
+    if (candidate == null) {
+      return null;
+    }
+    if (candidate is Map || candidate is Map<String, dynamic>) {
+      try {
+        return _mapFrom(candidate);
+      } catch (e) {
+        debugPrint('[AttendanceService] Failed to normalize data field: $e');
+        return null;
+      }
+    }
+    if (candidate is List) {
+      debugPrint('[AttendanceService] Data field is a list, wrapping as history');
+      return _wrapHistory(candidate);
+    }
+    if (candidate is String) {
+      return _tryDecodeStringPayload(candidate);
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _tryDecodeStringPayload(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    try {
+      final decoded = jsonDecode(trimmed);
+      if (decoded is Map || decoded is Map<String, dynamic>) {
+        return _mapFrom(decoded);
+      }
+      if (decoded is List) {
+        debugPrint('[AttendanceService] Decoded string payload into list, wrapping as history');
+        return _wrapHistory(decoded);
+      }
+    } catch (e) {
+      debugPrint('[AttendanceService] Gagal decode nested string payload: $e');
+    }
+    return null;
+  }
+
+  Map<String, dynamic> _wrapHistory(List<dynamic> history) {
+    return {
+      'today': null,
+      'history': history,
+    };
+  }
+
+  Map<String, dynamic> _mapFrom(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+    throw Exception('Tidak bisa mengonversi ${value.runtimeType} menjadi Map<String, dynamic>');
   }
 
   Future<ShiftSchedulePayload> getShiftSchedule() async {
@@ -235,11 +406,22 @@ class AttendanceService {
         rethrow;
       }
 
+      final clientMeta = await _getClientMeta();
+      final deviceMeta = clientMeta['device'] as Map<String, dynamic>?;
+      final appMeta = clientMeta['app'] as Map<String, dynamic>?;
       final formData = FormData.fromMap({
         'photo': photoFile,
         if (shiftId != null) 'shiftId': shiftId, // Opsional - hanya kirim jika ada
         if (latitude != null) 'latitude': latitude.toString(),
         if (longitude != null) 'longitude': longitude.toString(),
+        if (deviceMeta != null) 'deviceInfo': jsonEncode(deviceMeta),
+        if (appMeta != null) 'appInfo': jsonEncode(appMeta),
+        if (deviceMeta?['model'] != null) 'deviceModel': deviceMeta!['model'].toString(),
+        if (deviceMeta?['brand'] != null) 'deviceBrand': deviceMeta!['brand'].toString(),
+        if (deviceMeta?['version'] != null) 'osVersion': deviceMeta!['version'].toString(),
+        if (deviceMeta?['sdkInt'] != null) 'sdkInt': deviceMeta!['sdkInt'].toString(),
+        if (appMeta?['version'] != null) 'appVersion': appMeta!['version'].toString(),
+        if (appMeta?['buildNumber'] != null) 'buildNumber': appMeta!['buildNumber'].toString(),
       });
 
       debugPrint('[AttendanceService] Sending check-in request...');
@@ -356,10 +538,21 @@ class AttendanceService {
         rethrow;
       }
 
+      final clientMeta = await _getClientMeta();
+      final deviceMeta = clientMeta['device'] as Map<String, dynamic>?;
+      final appMeta = clientMeta['app'] as Map<String, dynamic>?;
       final formData = FormData.fromMap({
         'photo': photoFile,
         if (latitude != null) 'latitude': latitude.toString(),
         if (longitude != null) 'longitude': longitude.toString(),
+        if (deviceMeta != null) 'deviceInfo': jsonEncode(deviceMeta),
+        if (appMeta != null) 'appInfo': jsonEncode(appMeta),
+        if (deviceMeta?['model'] != null) 'deviceModel': deviceMeta!['model'].toString(),
+        if (deviceMeta?['brand'] != null) 'deviceBrand': deviceMeta!['brand'].toString(),
+        if (deviceMeta?['version'] != null) 'osVersion': deviceMeta!['version'].toString(),
+        if (deviceMeta?['sdkInt'] != null) 'sdkInt': deviceMeta!['sdkInt'].toString(),
+        if (appMeta?['version'] != null) 'appVersion': appMeta!['version'].toString(),
+        if (appMeta?['buildNumber'] != null) 'buildNumber': appMeta!['buildNumber'].toString(),
       });
 
       debugPrint('[AttendanceService] Sending check-out request...');
@@ -414,4 +607,3 @@ class AttendanceService {
     }
   }
 }
-

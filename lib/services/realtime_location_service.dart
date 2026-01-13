@@ -64,6 +64,9 @@ class RealtimeLocationService {
   DateTime? _previousLocationEntryTime;
   bool _previousLocationConsumed = false; // Flag untuk memastikan previous location hanya dikirim sekali
 
+  // Latest known position for subscribers (mini map)
+  final ValueNotifier<geolocator.Position?> latestPosition = ValueNotifier(null);
+
   // Area monitoring settings
   AreaMonitoringSettings? _areaSettings;
 
@@ -216,7 +219,7 @@ class RealtimeLocationService {
       // HANYA kirim log jika:
       // 1. User pindah lokasi (jarak > 25m) - kirim log dengan durasi stay yang sudah terkumpul
       // 2. Atau ini adalah lokasi pertama (belum ada entry point)
-      if (hasLocationChanged || _currentLocationEntryTime == null) {
+    if (hasLocationChanged || _currentLocationEntryTime == null) {
         // Jika pindah lokasi, kirim log dengan durasi stay dari lokasi sebelumnya
         // HANYA kirim jika belum pernah dikirim sebelumnya (flag _previousLocationConsumed = false)
         if (hasLocationChanged && 
@@ -267,7 +270,7 @@ class RealtimeLocationService {
         }
         
         // Kirim log untuk lokasi baru (entry point baru)
-      await _sendLocationToServer(position);
+        await _sendLocationToServer(position);
       }
 
     } catch (e) {
@@ -410,6 +413,7 @@ class RealtimeLocationService {
         'locationInfo': locationInfo, // ✅ Complete locationInfo with stayDurations
       };
 
+      latestPosition.value = position;
       final response = await ApiService().post('/api/supervisor/attendance/realtime/log', data: locationData);
 
       if (response.statusCode == 200) {
@@ -433,6 +437,19 @@ class RealtimeLocationService {
     // Pastikan durationMinutes selalu integer (bukan null)
     int durationMinutes = _currentLocationDurationMinutes;
     
+    latestPosition.value = geolocator.Position(
+      latitude: latitude,
+      longitude: longitude,
+      timestamp: DateTime.now(),
+      accuracy: 0,
+      altitude: 0,
+      altitudeAccuracy: 0,
+      heading: 0,
+      headingAccuracy: 0,
+      speed: 0,
+      speedAccuracy: 0,
+    );
+
     return {
       'currentLocation': {
         'latitude': latitude,

@@ -73,15 +73,24 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     const SizedBox(height: 60),
                     // Logo atau Icon
-                    Icon(
-                      Icons.work_outline,
-                      size: 80,
-                      color: Theme.of(context).primaryColor,
+                    Image.asset(
+                      'assets/icon.png',
+                      width: 80,
+                      height: 80,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        // Fallback ke icon jika logo tidak ditemukan
+                        return Icon(
+                          Icons.work_outline,
+                          size: 80,
+                          color: Theme.of(context).primaryColor,
+                        );
+                      },
                     ),
                     const SizedBox(height: 24),
                     // Title
                     Text(
-                      'Atenim Mobile',
+                      'Atenim Workforce',
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),

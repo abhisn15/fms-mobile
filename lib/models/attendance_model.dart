@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class AttendanceRecord {
   final String id;
   final String userId;
@@ -117,19 +119,45 @@ class AttendancePayload {
   factory AttendancePayload.fromJson(Map<String, dynamic> json) {
     // Backend mengembalikan { today: ..., history: [...] }
     // Kita map history ke recent untuk konsistensi dengan Flutter code
-    final history = json['history'] as List<dynamic>?;
-    final recent = json['recent'] as List<dynamic>?;
-    
-    // Gunakan history jika ada, jika tidak gunakan recent (backward compatibility)
-    final recordsList = history ?? recent ?? [];
-    
+    final historyRaw = json['history'];
+    final recentRaw = json['recent'];
+
+    // Safely extract the list, handling different possible formats
+    List<dynamic> recordsList = [];
+
+    if (historyRaw is List<dynamic>) {
+      recordsList = historyRaw;
+    } else if (recentRaw is List<dynamic>) {
+      recordsList = recentRaw;
+    } else if (historyRaw is Map<String, dynamic>) {
+      // If history is a Map, try to convert it to a List
+      debugPrint('[AttendancePayload] Warning: history is Map, not List. Converting...');
+      recordsList = historyRaw.values.toList();
+    } else if (recentRaw is Map<String, dynamic>) {
+      // If recent is a Map, try to convert it to a List
+      debugPrint('[AttendancePayload] Warning: recent is Map, not List. Converting...');
+      recordsList = recentRaw.values.toList();
+    } else {
+      debugPrint('[AttendancePayload] Warning: Neither history nor recent is a List. history type: ${historyRaw.runtimeType}, recent type: ${recentRaw.runtimeType}');
+    }
+
+    // Safely parse records
+    List<AttendanceRecord> parsedRecords = [];
+    try {
+      parsedRecords = recordsList
+          .where((e) => e is Map<String, dynamic>)
+          .map((e) => AttendanceRecord.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('[AttendancePayload] Error parsing records: $e');
+      debugPrint('[AttendancePayload] Raw recordsList: $recordsList');
+    }
+
     return AttendancePayload(
-      today: json['today'] != null
+      today: json['today'] != null && json['today'] is Map<String, dynamic>
           ? AttendanceRecord.fromJson(json['today'] as Map<String, dynamic>)
           : null,
-      recent: recordsList
-          .map((e) => AttendanceRecord.fromJson(e as Map<String, dynamic>))
-          .toList(),
+      recent: parsedRecords,
     );
   }
 
@@ -140,4 +168,3 @@ class AttendancePayload {
     };
   }
 }
-

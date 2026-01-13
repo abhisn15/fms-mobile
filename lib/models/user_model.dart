@@ -141,6 +141,20 @@ class Position {
   }
 }
 
+double? _parseDouble(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value);
+  return null;
+}
+
+int? _parseInt(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
+}
+
 class Site {
   final String id;
   final String siteId;
@@ -163,9 +177,9 @@ class Site {
       id: json['id'] as String? ?? '',
       siteId: json['siteId'] as String? ?? '',
       name: json['name'] as String? ?? '',
-      latitude: json['latitude'] != null ? (json['latitude'] as num).toDouble() : null,
-      longitude: json['longitude'] != null ? (json['longitude'] as num).toDouble() : null,
-      maxRadiusMeters: json['maxRadiusMeters'] != null ? (json['maxRadiusMeters'] as num).toInt() : null,
+      latitude: _parseDouble(json['latitude']),
+      longitude: _parseDouble(json['longitude']),
+      maxRadiusMeters: _parseInt(json['maxRadiusMeters']),
     );
   }
 

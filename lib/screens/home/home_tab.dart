@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart' as geolocator;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../providers/attendance_provider.dart';
 import '../../providers/shift_provider.dart';
 import '../../providers/request_provider.dart';
@@ -23,6 +26,8 @@ import '../../config/api_config.dart';
 import '../../utils/toast_helper.dart';
 import 'dart:io';
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
@@ -38,6 +43,19 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   bool _isDisposed = false;
   bool _gpsCheckInProgress = false;
   bool _gpsPrompted = false;
+  bool _shouldRetryCheckInAfterGpsPrompt = false;
+  LatLng? _currentMapPosition;
+  LatLng? _geofenceSitePosition;
+  int? _geofenceRadiusMeters;
+  GoogleMapController? _geofenceMapController;
+  bool _isFetchingMapPosition = false;
+  bool _isAutoFittingMap = false;
+  bool _mapUserInteracted = false;
+  BitmapDescriptor? _userMarkerIcon;
+  String? _userMarkerKey;
+  bool _isBuildingUserMarker = false;
+  bool _isMapDisposed = false;
+  AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
 
   @override
   void initState() {
@@ -99,6 +117,9 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _isDisposed = true;
+    _isMapDisposed = true;
+    _geofenceMapController?.dispose();
+    _geofenceMapController = null;
     _durationTimer?.cancel();
     _durationNotifier.dispose();
     super.dispose();
@@ -107,6 +128,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    _appLifecycleState = state;
     if (!mounted || _isDisposed) {
       return;
     }
@@ -151,6 +173,14 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
           _checkAndStartTimer(attendanceProvider);
         }
       });
+      if (_shouldRetryCheckInAfterGpsPrompt) {
+        _shouldRetryCheckInAfterGpsPrompt = false;
+        Future.delayed(const Duration(milliseconds: 250), () {
+          if (!mounted) return;
+          debugPrint('[HomeTab] Retrying check-in after GPS prompt user interaction');
+          _handleCheckIn();
+        });
+      }
     } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       // App di background - stop timer untuk hemat baterai
       // Timer tidak perlu berjalan di background karena durasi akan dihitung ulang saat app resume
@@ -159,19 +189,282 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     }
   }
 
+  Future<void> _loadCurrentLocationForMap({bool force = false}) async {
+    if (_isMapDisposed || _isFetchingMapPosition || (!force && _currentMapPosition != null)) {
+      return;
+    }
+    if (_appLifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    _isFetchingMapPosition = true;
+    try {
+      geolocator.Position? position =
+          await geolocator.Geolocator.getLastKnownPosition();
+      position ??= await geolocator.Geolocator.getCurrentPosition(
+        desiredAccuracy: geolocator.LocationAccuracy.low,
+        timeLimit: const Duration(seconds: 8),
+      );
+      if (position == null) {
+        return;
+      }
+      if (!mounted || _isDisposed || _isMapDisposed) {
+        return;
+      }
+      setState(() {
+        _currentMapPosition = LatLng(position!.latitude, position.longitude);
+      });
+      _tryFitGeofenceCamera();
+    } catch (e) {
+      debugPrint('[HomeTab] Failed to load map location: $e');
+    } finally {
+      _isFetchingMapPosition = false;
+    }
+  }
+
+  LatLngBounds _buildBounds(LatLng a, LatLng b) {
+    final southWest = LatLng(
+      a.latitude < b.latitude ? a.latitude : b.latitude,
+      a.longitude < b.longitude ? a.longitude : b.longitude,
+    );
+    final northEast = LatLng(
+      a.latitude > b.latitude ? a.latitude : b.latitude,
+      a.longitude > b.longitude ? a.longitude : b.longitude,
+    );
+    return LatLngBounds(southwest: southWest, northeast: northEast);
+  }
+
+  void _tryFitGeofenceCamera() {
+    final controller = _geofenceMapController;
+    final sitePosition = _geofenceSitePosition;
+    final userPosition = _currentMapPosition;
+    if (_isMapDisposed || _appLifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    if (controller == null || sitePosition == null || userPosition == null) {
+      return;
+    }
+    if (_mapUserInteracted) {
+      return;
+    }
+    final samePoint = sitePosition.latitude == userPosition.latitude &&
+        sitePosition.longitude == userPosition.longitude;
+    if (samePoint) {
+      _animateMapToPosition(controller, sitePosition, _zoomForRadius(_geofenceRadiusMeters));
+      return;
+    }
+    final bounds = _buildBounds(sitePosition, userPosition);
+    _animateMapToBounds(controller, bounds);
+  }
+
+  Future<void> _animateMapToBounds(GoogleMapController controller, LatLngBounds bounds) async {
+    if (_isMapDisposed || _appLifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    _isAutoFittingMap = true;
+    try {
+      await controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
+    } catch (_) {
+      // Ignore camera errors when map is not ready.
+    } finally {
+      _isAutoFittingMap = false;
+    }
+  }
+
+  Future<void> _animateMapToPosition(GoogleMapController controller, LatLng target, double zoom) async {
+    if (_isMapDisposed || _appLifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    _isAutoFittingMap = true;
+    try {
+      await controller.animateCamera(CameraUpdate.newCameraPosition(
+        CameraPosition(target: target, zoom: zoom),
+      ));
+    } catch (_) {
+      // Ignore camera errors when map is not ready.
+    } finally {
+      _isAutoFittingMap = false;
+    }
+  }
+
+  String _getUserInitials(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      return 'U';
+    }
+    final parts = trimmed.split(RegExp(r'\\s+')).where((part) => part.isNotEmpty).toList();
+    if (parts.isEmpty) {
+      return trimmed.substring(0, 1).toUpperCase();
+    }
+    if (parts.length == 1) {
+      return parts.first.substring(0, 1).toUpperCase();
+    }
+    final first = parts.first.substring(0, 1).toUpperCase();
+    final last = parts.last.substring(0, 1).toUpperCase();
+    return '$first$last';
+  }
+
+  Color _colorForUser(String seed) {
+    final palette = [
+      Colors.blue,
+      Colors.teal,
+      Colors.indigo,
+      Colors.green,
+      Colors.orange,
+      Colors.deepPurple,
+    ];
+    final hash = seed.codeUnits.fold<int>(0, (sum, item) => sum + item);
+    return palette[hash % palette.length];
+  }
+
+  Future<ui.Image?> _loadNetworkMarkerImage(String url) async {
+    try {
+      final imageProvider = NetworkImage(url);
+      final completer = Completer<ui.Image>();
+      final stream = imageProvider.resolve(const ImageConfiguration());
+      late ImageStreamListener listener;
+      listener = ImageStreamListener(
+        (ImageInfo info, bool _) {
+          completer.complete(info.image);
+          stream.removeListener(listener);
+        },
+        onError: (error, stackTrace) {
+          completer.completeError(error, stackTrace);
+          stream.removeListener(listener);
+        },
+      );
+      stream.addListener(listener);
+      return await completer.future;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<BitmapDescriptor> _createUserMarkerIcon({
+    required String initials,
+    required Color backgroundColor,
+    String? photoUrl,
+  }) async {
+    const size = 120.0;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final center = const Offset(size / 2, size / 2);
+    final radius = size / 2;
+
+    final backgroundPaint = Paint()..color = backgroundColor;
+    canvas.drawCircle(center, radius, backgroundPaint);
+
+    ui.Image? profileImage;
+    if (photoUrl != null && photoUrl.trim().isNotEmpty) {
+      profileImage = await _loadNetworkMarkerImage(photoUrl.trim());
+    }
+
+    final innerRadius = radius * 0.86;
+    final innerRect = Rect.fromCircle(center: center, radius: innerRadius);
+
+    if (profileImage != null) {
+      canvas.save();
+      canvas.clipPath(Path()..addOval(innerRect));
+      paintImage(
+        canvas: canvas,
+        rect: innerRect,
+        image: profileImage,
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.high,
+      );
+      canvas.restore();
+    } else {
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: initials,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: size * 0.36,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.2,
+          ),
+        ),
+        textDirection: ui.TextDirection.ltr,
+      );
+      textPainter.layout();
+      final offset = Offset(
+        center.dx - textPainter.width / 2,
+        center.dy - textPainter.height / 2,
+      );
+      textPainter.paint(canvas, offset);
+    }
+
+    final borderPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size * 0.06
+      ..color = Colors.white;
+    canvas.drawCircle(center, innerRadius, borderPaint);
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (byteData == null) {
+      return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
+    }
+    return BitmapDescriptor.fromBytes(byteData.buffer.asUint8List());
+  }
+
+  Future<void> _updateUserMarkerIcon({
+    required String displayName,
+    String? photoUrl,
+  }) async {
+    if (_isMapDisposed || _appLifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    final initials = _getUserInitials(displayName);
+    final trimmedPhotoUrl = photoUrl?.trim();
+    final markerKey = (trimmedPhotoUrl != null && trimmedPhotoUrl.isNotEmpty)
+        ? 'photo:$trimmedPhotoUrl'
+        : 'initials:$initials';
+    if (_userMarkerKey == markerKey && _userMarkerIcon != null) {
+      return;
+    }
+    if (_isBuildingUserMarker) {
+      return;
+    }
+    _isBuildingUserMarker = true;
+    try {
+      if (!mounted || _isDisposed || _isMapDisposed) {
+        return;
+      }
+      final icon = await _createUserMarkerIcon(
+        initials: initials,
+        backgroundColor: _colorForUser(displayName),
+        photoUrl: trimmedPhotoUrl,
+      );
+      if (!mounted || _isDisposed || _isMapDisposed) {
+        return;
+      }
+      setState(() {
+        _userMarkerIcon = icon;
+        _userMarkerKey = markerKey;
+      });
+    } finally {
+      _isBuildingUserMarker = false;
+    }
+  }
+
   Future<bool> _ensureGpsActive({required bool promptSettings}) async {
     if (_gpsCheckInProgress) {
+      debugPrint('[HomeTab] GPS check already in progress');
       return false;
     }
     _gpsCheckInProgress = true;
 
     try {
+      debugPrint('[HomeTab] Checking location permission...');
       var permission = await geolocator.Geolocator.checkPermission();
       if (permission == geolocator.LocationPermission.denied) {
+        debugPrint('[HomeTab] Requesting location permission...');
         permission = await geolocator.Geolocator.requestPermission();
       }
 
       if (permission == geolocator.LocationPermission.denied) {
+        debugPrint('[HomeTab] Location permission denied');
         if (mounted) {
           ToastHelper.showWarning(
             context,
@@ -182,6 +475,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       }
 
       if (permission == geolocator.LocationPermission.deniedForever) {
+        debugPrint('[HomeTab] Location permission denied forever');
         if (promptSettings && !_gpsPrompted) {
           _gpsPrompted = true;
           await geolocator.Geolocator.openAppSettings();
@@ -195,8 +489,10 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
         return false;
       }
 
+      debugPrint('[HomeTab] Checking if location service is enabled...');
       final serviceEnabled = await geolocator.Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
+        debugPrint('[HomeTab] Location service not enabled');
         if (promptSettings && !_gpsPrompted) {
           _gpsPrompted = true;
           await geolocator.Geolocator.openLocationSettings();
@@ -210,6 +506,8 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
         return false;
       }
 
+      debugPrint('[HomeTab] GPS is ready!');
+      _loadCurrentLocationForMap();
       return true;
     } finally {
       _gpsCheckInProgress = false;
@@ -484,11 +782,18 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
 
 
   Future<void> _handleCheckIn() async {
-    debugPrint('[HomeTab] Check-in button pressed');
-    final gpsReady = await _ensureGpsActive(promptSettings: true);
-    if (!gpsReady) {
-      return;
-    }
+    debugPrint('[HomeTab] Check-in button pressed - starting GPS check and camera');
+
+    // Start GPS check in background (don't wait for it)
+    _ensureGpsActive(promptSettings: true).then((gpsReady) {
+      if (!gpsReady) {
+        debugPrint('[HomeTab] GPS not ready, will prompt user');
+        _shouldRetryCheckInAfterGpsPrompt = true;
+      } else {
+        debugPrint('[HomeTab] GPS ready for check-in');
+        _shouldRetryCheckInAfterGpsPrompt = false;
+      }
+    });
     
     // Check if user has active leave request
     final requestProvider = Provider.of<RequestProvider>(context, listen: false);
@@ -632,10 +937,44 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     if (!gpsReady) {
       return;
     }
-    debugPrint('[HomeTab] Opening camera for check-out selfie...');
-
     final attendanceProvider =
         Provider.of<AttendanceProvider>(context, listen: false);
+    final today = attendanceProvider.todayAttendance;
+    final checkInDateTime = _parseCheckInDateTime(today);
+    if (checkInDateTime != null) {
+      final minutesWorked = DateTime.now().difference(checkInDateTime).inMinutes;
+      if (minutesWorked >= 0 && minutesWorked < 60 && mounted) {
+        final confirmEarlyCheckout = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            final durationLabel = minutesWorked == 1
+                ? '1 menit'
+                : '$minutesWorked menit';
+            return AlertDialog(
+              title: const Text('Konfirmasi Check-out'),
+              content: Text(
+                'Durasi kerja baru $durationLabel. Yakin ingin check-out sekarang?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Batal'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Check-out'),
+                ),
+              ],
+            );
+          },
+        );
+        if (confirmEarlyCheckout != true) {
+          return;
+        }
+      }
+    }
+
+    debugPrint('[HomeTab] Opening camera for check-out selfie...');
     final wasTracking = await attendanceProvider.pauseRealtimeTracking();
 
     // Buka kamera untuk selfie (hanya kamera, tidak boleh galeri)
@@ -1262,28 +1601,177 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
 
   Widget _buildGeofenceHint(BuildContext context, {required bool forCheckOut}) {
     final message = _getGeofenceHintText(context, forCheckOut: forCheckOut);
+    final user = Provider.of<AuthProvider>(context, listen: false).user;
+    final site = user?.site;
+    final latitude = site?.latitude;
+    final longitude = site?.longitude;
+    final radius = site?.maxRadiusMeters;
+    final hasCoordinates = latitude != null && longitude != null;
+    final rawPhotoUrl = user?.photoUrl;
+    final resolvedPhotoUrl = (rawPhotoUrl != null && rawPhotoUrl.trim().isNotEmpty)
+        ? ApiConfig.getImageUrl(rawPhotoUrl)
+        : null;
+
+    return Column(
+      children: [
+        if (hasCoordinates)
+          _buildGeofenceMapPreview(
+            latitude: latitude!,
+            longitude: longitude!,
+            radiusMeters: radius,
+            siteName: site?.name,
+            userName: user?.name,
+            userPhotoUrl: resolvedPhotoUrl,
+          ),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.orange[50],
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.orange[200]!),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.gps_fixed, size: 18, color: Colors.orange[700]),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  message,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.orange[900],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  double _zoomForRadius(int? radiusMeters) {
+    if (radiusMeters == null) return 16;
+    if (radiusMeters >= 2000) return 14;
+    if (radiusMeters >= 1000) return 15;
+    if (radiusMeters >= 500) return 15.5;
+    return 16.5;
+  }
+
+  Widget _buildGeofenceMapPreview({
+    required double latitude,
+    required double longitude,
+    int? radiusMeters,
+    String? siteName,
+    String? userName,
+    String? userPhotoUrl,
+  }) {
+    final target = LatLng(latitude, longitude);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDisposed || _isMapDisposed || _appLifecycleState != AppLifecycleState.resumed) {
+        return;
+      }
+      final previousTarget = _geofenceSitePosition;
+      final isSameTarget = previousTarget != null &&
+          previousTarget.latitude == target.latitude &&
+          previousTarget.longitude == target.longitude;
+      if (!isSameTarget || _geofenceRadiusMeters != radiusMeters) {
+        _mapUserInteracted = false;
+      }
+      _geofenceSitePosition = target;
+      _geofenceRadiusMeters = radiusMeters;
+      _loadCurrentLocationForMap();
+      final safeUserName = (userName != null && userName.trim().isNotEmpty)
+          ? userName.trim()
+          : 'User';
+      _updateUserMarkerIcon(
+        displayName: safeUserName,
+        photoUrl: userPhotoUrl,
+      );
+      _tryFitGeofenceCamera();
+    });
+    final displayName = (siteName != null && siteName.trim().isNotEmpty)
+        ? siteName.trim()
+        : 'Lokasi Penempatan';
+    final circles = <Circle>{};
+
+    if (radiusMeters != null) {
+      circles.add(
+        Circle(
+          circleId: const CircleId('site_radius'),
+          center: target,
+          radius: radiusMeters.toDouble(),
+          strokeWidth: 2,
+          strokeColor: Colors.orange[700]!,
+          fillColor: Colors.orange[200]!.withOpacity(0.3),
+        ),
+      );
+    }
+
+    final markers = <Marker>{
+      Marker(
+        markerId: const MarkerId('site_marker'),
+        position: target,
+        infoWindow: InfoWindow(title: displayName),
+      ),
+      if (_currentMapPosition != null)
+        Marker(
+          markerId: const MarkerId('user_marker'),
+          position: _currentMapPosition!,
+          infoWindow: const InfoWindow(title: 'Lokasi Kamu'),
+          icon: _userMarkerIcon ?? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          anchor: const Offset(0.5, 0.5),
+          zIndex: 2,
+        ),
+    };
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      height: 170,
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.orange[50],
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.orange[200]!),
+        border: Border.all(color: Colors.orange[200]!, width: 1.2),
       ),
-      child: Row(
-        children: [
-          Icon(Icons.gps_fixed, size: 18, color: Colors.orange[700]),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.orange[900],
-              ),
-            ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: GoogleMap(
+          initialCameraPosition: CameraPosition(
+            target: target,
+            zoom: _zoomForRadius(radiusMeters),
           ),
-        ],
+          onMapCreated: (controller) {
+            if (_isMapDisposed) {
+              controller.dispose();
+              return;
+            }
+            _geofenceMapController = controller;
+            _tryFitGeofenceCamera();
+          },
+          onCameraMoveStarted: () {
+            if (_isAutoFittingMap) {
+              return;
+            }
+            _mapUserInteracted = true;
+          },
+          markers: markers,
+          circles: circles,
+          mapType: MapType.normal,
+          liteModeEnabled: false,
+          myLocationEnabled: false,
+          myLocationButtonEnabled: false,
+          zoomControlsEnabled: false,
+          compassEnabled: true,
+          rotateGesturesEnabled: true,
+          scrollGesturesEnabled: true,
+          tiltGesturesEnabled: true,
+          zoomGesturesEnabled: true,
+          mapToolbarEnabled: false,
+          gestureRecognizers: {
+            Factory<OneSequenceGestureRecognizer>(
+              () => EagerGestureRecognizer(),
+            ),
+          },
+        ),
       ),
     );
   }

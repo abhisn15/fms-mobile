@@ -57,6 +57,23 @@ class _ActivityScreenState extends State<ActivityScreen> {
     return parsedDate;
   }
 
+  String? _formatActivityTime(DailyActivity activity) {
+    if (activity.createdAt.isNotEmpty) {
+      final createdAt = DateTime.tryParse(activity.createdAt)?.toLocal();
+      if (createdAt != null) {
+        return DateFormat('HH:mm').format(createdAt);
+      }
+    }
+    final dateValue = activity.date;
+    if (dateValue.contains('T') || dateValue.contains(':')) {
+      final parsed = DateTime.tryParse(dateValue)?.toLocal();
+      if (parsed != null) {
+        return DateFormat('HH:mm').format(parsed);
+      }
+    }
+    return null;
+  }
+
   bool _isLocalPhotoUrl(String url) {
     return url.startsWith('file://');
   }
@@ -408,6 +425,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final activityDateLabel = activityDate != null
         ? DateFormat('dd MMMM yyyy').format(activityDate)
         : (activity.date.isNotEmpty ? activity.date : 'Tanggal tidak tersedia');
+    final activityTimeLabel = _formatActivityTime(activity);
     return Card(
       color: isToday ? Colors.blue[50] : null,
       child: ExpansionTile(
@@ -440,11 +458,24 @@ class _ActivityScreenState extends State<ActivityScreen> {
         title: Row(
           children: [
             Expanded(
-              child: Text(
-                activityDateLabel,
-                style: TextStyle(
-                  fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    activityDateLabel,
+                    style: TextStyle(
+                      fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  if (activityTimeLabel != null)
+                    Text(
+                      activityTimeLabel,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                ],
               ),
             ),
             if (activity.isLocal)

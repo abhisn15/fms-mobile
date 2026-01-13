@@ -81,15 +81,35 @@ geolocator.LocationSettings _buildLocationSettings(int intervalSeconds) {
 
 @pragma('vm:entry-point')
 void backgroundTrackingEntryPoint(ServiceInstance service) async {
-  WidgetsFlutterBinding.ensureInitialized();
-  DartPluginRegistrant.ensureInitialized();
+  // Safety checks untuk mencegah FlutterJNI.ensureAttachedToNative crash
+  // Wrap semua initialization dalam try-catch untuk mencegah crash
+  try {
+    WidgetsFlutterBinding.ensureInitialized();
+  } catch (e) {
+    debugPrint('[BackgroundTracking] ⚠️ Failed to initialize WidgetsBinding: $e');
+    // Continue anyway - service might still work without full Flutter binding
+  }
+
+  try {
+    DartPluginRegistrant.ensureInitialized();
+  } catch (e) {
+    debugPrint('[BackgroundTracking] ⚠️ Failed to initialize DartPluginRegistrant: $e');
+    // Continue anyway - service might still work
+  }
 
   try {
     await dotenv.load(fileName: '.env');
-  } catch (_) {}
+  } catch (_) {
+    // Silently continue if .env file not found
+  }
 
-  if (service is AndroidServiceInstance) {
-    service.setAsForegroundService();
+  try {
+    if (service is AndroidServiceInstance) {
+      service.setAsForegroundService();
+    }
+  } catch (e) {
+    debugPrint('[BackgroundTracking] ⚠️ Failed to set foreground service: $e');
+    // Continue anyway
   }
 
   final apiService = ApiService();
@@ -98,12 +118,24 @@ void backgroundTrackingEntryPoint(ServiceInstance service) async {
   TrackingState? currentState;
   geolocator.Position? lastSentPosition;
   DateTime? lastSentAt;
+  bool _isStopping = false; // Flag untuk mencegah race condition
 
   Future<void> stopStream() async {
-    await subscription?.cancel();
-    subscription = null;
-    lastSentPosition = null;
-    lastSentAt = null;
+    if (_isStopping) {
+      debugPrint('[BackgroundTracking] ⚠️ Already stopping stream, skipping...');
+      return;
+    }
+    _isStopping = true;
+    try {
+      await subscription?.cancel();
+      subscription = null;
+      lastSentPosition = null;
+      lastSentAt = null;
+    } catch (e) {
+      debugPrint('[BackgroundTracking] ⚠️ Error stopping stream: $e');
+    } finally {
+      _isStopping = false;
+    }
   }
 
   Future<void> sendLocation({
@@ -145,6 +177,11 @@ void backgroundTrackingEntryPoint(ServiceInstance service) async {
   }
 
   Future<void> startStream(TrackingState state) async {
+    // Prevent race condition dengan menunggu stop selesai
+    if (_isStopping) {
+      debugPrint('[BackgroundTracking] ⚠️ Waiting for stream to stop...');
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
     await stopStream();
 
     final permission = await geolocator.Geolocator.checkPermission();
@@ -266,8 +303,18 @@ void backgroundTrackingEntryPoint(ServiceInstance service) async {
   }
 
   service.on('stopService').listen((_) async {
-    await stopStream();
-    service.stopSelf();
+    try {
+      await stopStream();
+      // Small delay untuk memastikan semua operasi selesai sebelum stop
+      await Future.delayed(const Duration(milliseconds: 100));
+      service.stopSelf();
+    } catch (e) {
+      debugPrint('[BackgroundTracking] ⚠️ Error stopping service: $e');
+      // Force stop even if there's an error
+      try {
+        service.stopSelf();
+      } catch (_) {}
+    }
   });
 
   await refreshTrackingState();

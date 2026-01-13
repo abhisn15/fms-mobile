@@ -15,6 +15,29 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// Load .env values for manifest placeholders (e.g., Google Maps API key)
+val envProperties = Properties()
+val envFile = rootProject.file("../.env")
+if (envFile.exists()) {
+    envFile.forEachLine { rawLine ->
+        val line = rawLine.trim()
+        if (line.isEmpty() || line.startsWith("#")) {
+            return@forEachLine
+        }
+        val separatorIndex = line.indexOf("=")
+        if (separatorIndex <= 0) {
+            return@forEachLine
+        }
+        val key = line.substring(0, separatorIndex).trim()
+        var value = line.substring(separatorIndex + 1).trim()
+        if ((value.startsWith("\"") && value.endsWith("\"")) ||
+            (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.substring(1, value.length - 1)
+        }
+        envProperties.setProperty(key, value)
+    }
+}
+
 android {
     namespace = "com.atenim"
     compileSdk = flutter.compileSdkVersion
@@ -39,6 +62,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["MAPS_API_KEY"] = envProperties.getProperty("GOOGLE_MAPS_API_KEY") ?: ""
     }
 
     signingConfigs {

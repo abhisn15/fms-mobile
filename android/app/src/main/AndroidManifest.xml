@@ -25,6 +25,11 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- Google Maps API Key -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}" />
+
         <!-- Notification channels will be created programmatically -->
         <meta-data
             android:name="com.google.android.gms.version"

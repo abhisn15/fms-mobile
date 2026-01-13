@@ -97,7 +97,7 @@ class _MyAppState extends State<MyApp> {
       ],
       child: AppLifecycleHandler(
         child: MaterialApp(
-          title: 'Atenim Mobile',
+          title: 'Atenim Workforce',
           debugShowCheckedModeBanner: false,
           navigatorKey: navigatorKey, // Global navigator key untuk auto logout
           localizationsDelegates: const [
@@ -202,9 +202,23 @@ class _AppLifecycleHandlerState extends State<AppLifecycleHandler> with WidgetsB
   }
 
   void _setForeground(bool isForeground) {
+    if (!mounted) return;
+    
+    try {
     TrackingStateService.setAppForeground(isForeground);
+      
+      // Safety check: pastikan mounted sebelum akses Provider
+      if (mounted) {
+        try {
     final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
     attendanceProvider.setForegroundActive(isForeground);
+        } catch (e) {
+          debugPrint('[AppLifecycleHandler] ⚠️ Failed to set foreground active: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('[AppLifecycleHandler] ⚠️ Error in _setForeground: $e');
+    }
   }
 
   @override
@@ -219,37 +233,74 @@ class _AppLifecycleHandlerState extends State<AppLifecycleHandler> with WidgetsB
   }
 
   Future<void> _recoverServicesAfterForceClose() async {
+    if (!mounted) return;
+    
     debugPrint('[AppLifecycleHandler] 🔄 Recovering services after app resume...');
 
+    // Delay sedikit untuk memastikan Flutter engine sudah siap
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    if (!mounted) return;
+
     try {
+      if (!mounted) {
+        debugPrint('[AppLifecycleHandler] ⚠️ Widget not mounted, skipping recovery');
+        return;
+      }
+
       // 1. Re-initialize persistent notification if needed
+      try {
       final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
       await attendanceProvider.loadAttendance(); // This will restore persistent notification
+      } catch (e) {
+        debugPrint('[AppLifecycleHandler] ⚠️ Failed to load attendance: $e');
+      }
 
       // 2. Re-check background tracking status
+      try {
       final trackingState = await TrackingStateService.getTrackingState();
-      if (trackingState != null) {
+        if (trackingState != null && mounted) {
         debugPrint('[AppLifecycleHandler] 🔄 Background tracking was active, restarting...');
         await BackgroundTrackingService.ensureRunning();
+        }
+      } catch (e) {
+        debugPrint('[AppLifecycleHandler] ⚠️ Failed to restart background tracking: $e');
       }
 
       // 3. Re-sync any pending data
+      if (mounted) {
       await _syncPendingData();
+      }
 
+      if (mounted) {
       debugPrint('[AppLifecycleHandler] ✅ Services recovered successfully');
+      }
     } catch (e) {
       debugPrint('[AppLifecycleHandler] ❌ Failed to recover services: $e');
     }
   }
 
   Future<void> _syncPendingData() async {
+    if (!mounted) return;
+    
     try {
+      if (!mounted) {
+        debugPrint('[AppLifecycleHandler] ⚠️ Widget not mounted for sync');
+        return;
+      }
+
       // Sync pending activities
+      try {
       final activityProvider = Provider.of<ActivityProvider>(context, listen: false);
       await activityProvider.syncPendingActivities();
+      } catch (e) {
+        debugPrint('[AppLifecycleHandler] ⚠️ Failed to sync activities: $e');
+      }
 
       // Location logs will be synced automatically by AttendanceProvider when needed
+      if (mounted) {
       debugPrint('[AppLifecycleHandler] ✅ Pending data synced');
+      }
     } catch (e) {
       debugPrint('[AppLifecycleHandler] ❌ Failed to sync pending data: $e');
     }
@@ -313,10 +364,18 @@ class _DeveloperOptionsWrapperState extends State<DeveloperOptionsWrapper> with 
   void _checkDeveloperOptions() async {
     if (!mounted) return;
     
+    try {
     final developerProvider = Provider.of<DeveloperOptionsProvider>(context, listen: false);
     
     // Refresh status dari native Android
+      try {
     await developerProvider.refreshStatus();
+      } catch (e) {
+        debugPrint('[DeveloperOptionsWrapper] ⚠️ Failed to refresh status: $e');
+        return;
+      }
+      
+      if (!mounted) return;
     
     // Cek status setelah refresh
     final isSecurityRisk = developerProvider.isSecurityRisk;
@@ -329,10 +388,16 @@ class _DeveloperOptionsWrapperState extends State<DeveloperOptionsWrapper> with 
         debugPrint('[DeveloperOptionsWrapper] Security risk cleared, resetting dialog flag');
         _dialogShown = false;
         // Tutup dialog jika masih terbuka
-        if (mounted && Navigator.of(context).canPop()) {
+          if (mounted) {
+            try {
+              if (Navigator.of(context).canPop()) {
           Navigator.of(context).pop();
+              }
+            } catch (e) {
+              debugPrint('[DeveloperOptionsWrapper] ⚠️ Failed to pop dialog: $e');
+            }
+          }
         }
-      }
       return; // Tidak perlu tampilkan dialog jika tidak ada security risk
     }
     
@@ -342,6 +407,7 @@ class _DeveloperOptionsWrapperState extends State<DeveloperOptionsWrapper> with 
       _dialogShown = true;
       
       // Tampilkan dialog dengan informasi lengkap (hanya untuk mock location)
+        try {
       DeveloperOptionsWarningDialog.show(
         context,
         isDeveloperOptionsEnabled: false, // Tidak perlu check developer options
@@ -357,7 +423,17 @@ class _DeveloperOptionsWrapperState extends State<DeveloperOptionsWrapper> with 
             _checkDeveloperOptions(); // Re-check immediately
           }
         });
-      });
+          }).catchError((e) {
+            debugPrint('[DeveloperOptionsWrapper] ⚠️ Error showing dialog: $e');
+            _dialogShown = false;
+          });
+        } catch (e) {
+          debugPrint('[DeveloperOptionsWrapper] ⚠️ Exception showing dialog: $e');
+          _dialogShown = false;
+        }
+      }
+    } catch (e) {
+      debugPrint('[DeveloperOptionsWrapper] ⚠️ Error in _checkDeveloperOptions: $e');
     }
   }
 
@@ -399,7 +475,11 @@ class AuthWrapper extends StatelessWidget {
           if (updateAvailable && versionData != null) {
             // Show update dialog
             WidgetsBinding.instance.addPostFrameCallback((_) {
+              try {
               _showUpdateDialog(context, versionData, updateRequired);
+              } catch (e) {
+                debugPrint('[AuthWrapper] ⚠️ Failed to show update dialog: $e');
+              }
             });
           }
         });
@@ -416,11 +496,16 @@ class AuthWrapper extends StatelessWidget {
               debugPrint('[AuthWrapper] ⚠️ Failed to clear check-in notification: $e');
             }
             
-            if (navigatorKey.currentContext != null) {
-              Navigator.of(navigatorKey.currentContext!).pushNamedAndRemoveUntil(
+            try {
+              final navContext = navigatorKey.currentContext;
+              if (navContext != null) {
+                Navigator.of(navContext).pushNamedAndRemoveUntil(
                 '/login',
                 (route) => false,
               );
+              }
+            } catch (e) {
+              debugPrint('[AuthWrapper] ⚠️ Failed to navigate to login: $e');
             }
           });
         }
@@ -441,8 +526,19 @@ class AuthWrapper extends StatelessWidget {
 
           // Pastikan background tracking service running jika ada attendance aktif
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            final attendanceProvider = Provider.of<AttendanceProvider>(navigatorKey.currentContext!, listen: false);
+            try {
+              final navContext = navigatorKey.currentContext;
+              if (navContext != null) {
+                try {
+                  final attendanceProvider = Provider.of<AttendanceProvider>(navContext, listen: false);
             attendanceProvider.ensureBackgroundTracking();
+                } catch (e) {
+                  debugPrint('[AuthWrapper] ⚠️ Failed to ensure background tracking: $e');
+                }
+              }
+            } catch (e) {
+              debugPrint('[AuthWrapper] ⚠️ Error in background tracking callback: $e');
+            }
           });
 
           return const HomeScreen();

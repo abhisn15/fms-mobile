@@ -251,7 +251,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildInfoTile(
             icon: Icons.info,
             title: 'Nama Aplikasi',
-            value: _packageInfo?.appName ?? 'Atenim Mobile',
+            value: _packageInfo?.appName ?? 'Atenim Workforce',
           ),
           _buildInfoTile(
             icon: Icons.tag,
@@ -397,7 +397,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
-                'Atenim Mobile v${_packageInfo?.version ?? '1.0.0'}',
+                'Atenim Workforce v${_packageInfo?.version ?? '1.0.0'}',
                 style: TextStyle(
                   color: Colors.grey[600],
                   fontSize: 12,
