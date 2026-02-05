@@ -1,0 +1,200 @@
+class User {
+  final String id;
+  final String name;
+  final String email;
+  final String role;
+  final String? team;
+  final String? title;
+  final String? avatarColor;
+  final String? photoUrl;
+  final String externalId;
+  final String? phone;
+  final String? bpjsKesehatan;
+  final String? bpjsKetenagakerjaan;
+  final String? tempatLahir;
+  final String? tanggalLahir;
+  final String? namaRekening;
+  final String? noRekening;
+  final String? pemilikRekening;
+  final String? positionId;
+  final String? siteId;
+  final Position? position;
+  final Site? site;
+  final bool? hasPassword; // Indicates if user has set a password
+  final bool? needsPasswordChange; // Indicates if user is still using default password
+
+  User({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.role,
+    this.team,
+    this.title,
+    this.avatarColor,
+    this.photoUrl,
+    required this.externalId,
+    this.phone,
+    this.bpjsKesehatan,
+    this.bpjsKetenagakerjaan,
+    this.tempatLahir,
+    this.tanggalLahir,
+    this.namaRekening,
+    this.noRekening,
+    this.pemilikRekening,
+    this.positionId,
+    this.siteId,
+    this.position,
+    this.site,
+    this.hasPassword,
+    this.needsPasswordChange,
+  });
+
+  factory User.fromJson(Map<String, dynamic> json) {
+    // Ensure name is never null - use email prefix as fallback
+    final name = json['name'] as String?;
+    final email = json['email'] as String? ?? '';
+    final displayName = (name != null && name.trim().isNotEmpty) 
+        ? name 
+        : (email.isNotEmpty ? email.split('@')[0] : 'User');
+    
+    return User(
+      id: json['id'] as String? ?? '',
+      name: displayName,
+      email: email,
+      role: json['role'] as String? ?? 'karyawan',
+      team: json['team'] as String?,
+      title: json['title'] as String?,
+      avatarColor: json['avatarColor'] as String?,
+      photoUrl: json['photoUrl'] as String?,
+      externalId: json['externalId'] as String? ?? '',
+      phone: json['phone'] as String?,
+      bpjsKesehatan: json['bpjsKesehatan'] as String?,
+      bpjsKetenagakerjaan: json['bpjsKetenagakerjaan'] as String?,
+      tempatLahir: json['tempatLahir'] as String?,
+      tanggalLahir: json['tanggalLahir'] as String?,
+      namaRekening: json['namaRekening'] as String?,
+      noRekening: json['noRekening'] as String?,
+      pemilikRekening: json['pemilikRekening'] as String?,
+      positionId: json['positionId'] as String?,
+      siteId: json['siteId'] as String?,
+      position: json['position'] != null ? Position.fromJson(json['position']) : null,
+      site: json['site'] != null ? Site.fromJson(json['site']) : null,
+      hasPassword: json['hasPassword'] as bool?,
+      needsPasswordChange: json['needsPasswordChange'] as bool?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'role': role,
+      'team': team,
+      'title': title,
+      'avatarColor': avatarColor,
+      'photoUrl': photoUrl,
+      'externalId': externalId,
+      'phone': phone,
+      'bpjsKesehatan': bpjsKesehatan,
+      'bpjsKetenagakerjaan': bpjsKetenagakerjaan,
+      'tempatLahir': tempatLahir,
+      'tanggalLahir': tanggalLahir,
+      'namaRekening': namaRekening,
+      'noRekening': noRekening,
+      'pemilikRekening': pemilikRekening,
+      'positionId': positionId,
+      'siteId': siteId,
+      'position': position?.toJson(),
+      'site': site?.toJson(),
+      'hasPassword': hasPassword,
+      'needsPasswordChange': needsPasswordChange,
+    };
+  }
+}
+
+class Position {
+  final String id;
+  final String positionId;
+  final String name;
+
+  Position({
+    required this.id,
+    required this.positionId,
+    required this.name,
+  });
+
+  factory Position.fromJson(Map<String, dynamic> json) {
+    return Position(
+      id: json['id'] as String? ?? '',
+      positionId: json['positionId'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'positionId': positionId,
+      'name': name,
+    };
+  }
+}
+
+double? _parseDouble(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value);
+  return null;
+}
+
+int? _parseInt(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value);
+  return null;
+}
+
+class Site {
+  final String id;
+  final String siteId;
+  final String name;
+  final double? latitude;
+  final double? longitude;
+  final int? maxRadiusMeters;
+  final int? lateToleranceMinutes;
+
+  Site({
+    required this.id,
+    required this.siteId,
+    required this.name,
+    this.latitude,
+    this.longitude,
+    this.maxRadiusMeters,
+    this.lateToleranceMinutes,
+  });
+
+  factory Site.fromJson(Map<String, dynamic> json) {
+    return Site(
+      id: json['id'] as String? ?? '',
+      siteId: json['siteId'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      latitude: _parseDouble(json['latitude']),
+      longitude: _parseDouble(json['longitude']),
+      maxRadiusMeters: _parseInt(json['maxRadiusMeters']),
+      lateToleranceMinutes: _parseInt(json['lateToleranceMinutes']),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'siteId': siteId,
+      'name': name,
+      'latitude': latitude,
+      'longitude': longitude,
+      'maxRadiusMeters': maxRadiusMeters,
+      'lateToleranceMinutes': lateToleranceMinutes,
+    };
+  }
+}

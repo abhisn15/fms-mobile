@@ -1,0 +1,15 @@
+                                  ),
+                                  Text(
+                                    'Realtime status & riwayat sebulan',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  Text(
+                                    '📍 Lokasi dilacak setiap 10 detik saat check-in',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),

@@ -1,0 +1,89 @@
+name: fms_mobile
+description: "Atenim Workforce App - Employee Management System"
+publish_to: 'none'
+
+version: 1.5.2+29
+
+environment:
+  sdk: ^3.10.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # UI & Icons
+  cupertino_icons: ^1.0.8
+  
+  # State Management
+  provider: ^6.1.1
+  
+  # HTTP Client
+  http: ^1.2.0
+  dio: ^5.4.0
+  
+  # Local Storage
+  shared_preferences: ^2.2.2
+  
+  # Connectivity
+  connectivity_plus: ^6.0.5
+  
+  # Image Picker & Camera
+  image_picker: ^1.1.2
+  camera: ^0.11.0+2
+  
+  # Location & GPS
+  geolocator: ^11.0.0
+  permission_handler: ^11.1.0
+
+  # URL Launcher (for opening Play Store)
+  url_launcher: ^6.3.2
+
+  # Package Info (for getting app version)
+  package_info_plus: ^4.2.0
+
+  # Device Info (for low-end device detection)
+  device_info_plus: ^10.1.2
+
+  # Local Notifications (for persistent check-in notification)
+  flutter_local_notifications: ^17.2.2
+  
+  # Date & Time
+  intl: ^0.20.2
+  
+  # Image Display
+  cached_network_image: ^3.3.1
+
+  # Loading & UI
+  flutter_spinkit: ^5.2.0
+
+  # Environment Variables
+  flutter_dotenv: ^5.1.0
+  flutter_background_service: ^5.1.0
+  flutter_background_service_android: ^6.3.1
+  google_maps_flutter: ^2.14.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+  
+  # Assets
+  assets:
+    - .env
+    - assets/splash_screen.png
+    - assets/icon.png
+
+# App Icon Configuration
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/icon.png"
+  remove_alpha_ios: true
