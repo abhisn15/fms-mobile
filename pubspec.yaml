@@ -39,6 +39,7 @@ dependencies:
 
   # URL Launcher (for opening Play Store)
   url_launcher: ^6.3.2
+  in_app_review: ^2.0.10
 
   # Package Info (for getting app version)
   package_info_plus: ^4.2.0

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:in_app_review/in_app_review.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/global_update_checker.dart';
 import '../profile/profile_screen.dart';
@@ -18,6 +19,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   PackageInfo? _packageInfo;
   bool _isLoadingVersion = false;
   Map<String, String?> _updateCheckInfo = {};
+  final InAppReview _inAppReview = InAppReview.instance;
 
   @override
   void initState() {
@@ -238,6 +240,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _rateApp() async {
     final packageName = _packageInfo?.packageName;
+    try {
+      final available = await _inAppReview.isAvailable();
+      if (available) {
+        await _inAppReview.requestReview();
+        return;
+      }
+    } catch (e) {
+      debugPrint('[Settings] In-app review not available: $e');
+    }
+
     if (packageName == null || packageName.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
