@@ -236,6 +236,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _rateApp() async {
+    final packageName = _packageInfo?.packageName;
+    if (packageName == null || packageName.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gagal membuka Play Store. Paket aplikasi tidak ditemukan.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final marketUri = Uri.parse('market://details?id=$packageName');
+    final webUri = Uri.parse('https://play.google.com/store/apps/details?id=$packageName');
+
+    try {
+      final openedMarket = await launchUrl(marketUri, mode: LaunchMode.externalApplication);
+      if (!openedMarket) {
+        final openedWeb = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+        if (!openedWeb && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Tidak bisa membuka Play Store.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal membuka Play Store: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -386,6 +426,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // About Section
           _buildSectionHeader('Tentang'),
+          ListTile(
+            leading: const Icon(Icons.star_rate_rounded, color: Colors.amber),
+            title: const Text('Beri Rating Aplikasi'),
+            subtitle: const Text('Buka Play Store untuk memberi rating'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _rateApp,
+          ),
           ListTile(
             leading: const Icon(Icons.support_agent, color: Colors.green),
             title: const Text('Hubungi Support'),
