@@ -2,7 +2,7 @@ name: fms_mobile
 description: "Atenim Workforce App - Employee Management System"
 publish_to: 'none'
 
-version: 1.5.2+29
+version: 1.5.3+30
 
 environment:
   sdk: ^3.10.1

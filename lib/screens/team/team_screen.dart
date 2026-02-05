@@ -861,9 +861,8 @@ class _TeamScreenState extends State<TeamScreen> {
           ),
         ],
         const SizedBox(height: 12),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 520;
+        Builder(
+          builder: (context) {
             final teamCard = _buildSectionCard(
               title: 'Team',
               child: _leaderTeams.length <= 1
@@ -942,33 +941,15 @@ class _TeamScreenState extends State<TeamScreen> {
               bkoCount: bkoCount,
             );
 
-            if (isWide) {
-              // Put Team and Aksi Cepat side by side, and Date below them
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Team
-                  Expanded(
-                    child: teamCard,
-                  ),
-                  const SizedBox(width: 12),
-                  // Aksi Cepat
-                  Expanded(
-                    child: quickActionCard,
-                  ),
-                  // You can add more Expanded here if spacing needed between quickActionCard and below row
-                ],
-              );
-            }
-
-            // Not wide: show vertically
+            // Always take all the cards full width (single column)
             return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 teamCard,
                 const SizedBox(height: 12),
-                quickActionCard,
-                const SizedBox(height: 12),
                 dateCard,
+                const SizedBox(height: 12),
+                quickActionCard,
                 const SizedBox(height: 12),
                 monitoringCard,
               ],
