@@ -691,6 +691,12 @@ class _ProfileScreenState extends State<ProfileScreen>
               ],
               const Divider(height: 32),
               _buildInfoRow(
+                icon: Icons.badge,
+                label: 'ID Karyawan',
+                value: user.employeeId ?? '',
+              ),
+              const Divider(height: 32),
+              _buildInfoRow(
                 icon: Icons.location_on,
                 label: 'Site',
                 value: (user.site?.name?.isNotEmpty ?? false)

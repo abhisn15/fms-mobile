@@ -8,6 +8,7 @@ class User {
   final String? avatarColor;
   final String? photoUrl;
   final String externalId;
+  final String? employeeId;
   final String? phone;
   final String? bpjsKesehatan;
   final String? bpjsKetenagakerjaan;
@@ -33,6 +34,7 @@ class User {
     this.avatarColor,
     this.photoUrl,
     required this.externalId,
+    this.employeeId,
     this.phone,
     this.bpjsKesehatan,
     this.bpjsKetenagakerjaan,
@@ -67,6 +69,7 @@ class User {
       avatarColor: json['avatarColor'] as String?,
       photoUrl: json['photoUrl'] as String?,
       externalId: json['externalId'] as String? ?? '',
+      employeeId: json['employeeId'] as String?,
       phone: json['phone'] as String?,
       bpjsKesehatan: json['bpjsKesehatan'] as String?,
       bpjsKetenagakerjaan: json['bpjsKetenagakerjaan'] as String?,
@@ -95,6 +98,7 @@ class User {
       'avatarColor': avatarColor,
       'photoUrl': photoUrl,
       'externalId': externalId,
+      'employeeId': employeeId,
       'phone': phone,
       'bpjsKesehatan': bpjsKesehatan,
       'bpjsKetenagakerjaan': bpjsKetenagakerjaan,
