@@ -462,7 +462,7 @@ class _TeamScreenState extends State<TeamScreen> {
               if (!_isLeader && _myTeams.isNotEmpty) _buildSearchBar(),
               if (!_isLeader && _myTeams.isNotEmpty) const SizedBox(height: 12),
               if (_isLeader)
-                _buildMemberList()
+                _buildMemberList(currentUserId)
               else
                 _buildMemberTable(currentUserId),
               if (_isLeader) const SizedBox(height: 20),
@@ -505,43 +505,48 @@ class _TeamScreenState extends State<TeamScreen> {
 
     return _buildSectionCard(
       title: 'Filter Team',
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          FilterChip(
-            label: const Text('Semua'),
-            selected: allSelected,
-            onSelected: (selected) {
-              setState(() {
-                if (selected) {
-                  _selectedLeaderTeamIds = _leaderTeams.map((team) => team.id).toSet();
-                } else {
-                  _selectedLeaderTeamIds = {};
-                }
-                _members = _mergeLeaderMembers(_selectedLeaderTeamIds);
-              });
-            },
-          ),
-          ..._leaderTeams.map((team) {
-            final selected = _selectedLeaderTeamIds.contains(team.id);
-            final label = team.name.isNotEmpty ? team.name : '(Tanpa Nama Team)';
-            return FilterChip(
-              label: Text(label),
-              selected: selected,
-              onSelected: (value) {
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            FilterChip(
+              label: const Text('Semua'),
+              selected: allSelected,
+              onSelected: (selected) {
                 setState(() {
-                  if (value) {
-                    _selectedLeaderTeamIds.add(team.id);
+                  if (selected) {
+                    _selectedLeaderTeamIds = _leaderTeams.map((team) => team.id).toSet();
                   } else {
-                    _selectedLeaderTeamIds.remove(team.id);
+                    _selectedLeaderTeamIds = {};
                   }
                   _members = _mergeLeaderMembers(_selectedLeaderTeamIds);
                 });
               },
-            );
-          }).toList(),
-        ],
+            ),
+            const SizedBox(width: 8),
+            ..._leaderTeams.map((team) {
+              final selected = _selectedLeaderTeamIds.contains(team.id);
+              final label = team.name.isNotEmpty ? team.name : '(Tanpa Nama Team)';
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  label: Text(label),
+                  selected: selected,
+                  onSelected: (value) {
+                    setState(() {
+                      if (value) {
+                        _selectedLeaderTeamIds.add(team.id);
+                      } else {
+                        _selectedLeaderTeamIds.remove(team.id);
+                      }
+                      _members = _mergeLeaderMembers(_selectedLeaderTeamIds);
+                    });
+                  },
+                ),
+              );
+            }).toList(),
+          ],
+        ),
       ),
     );
   }
@@ -578,7 +583,7 @@ class _TeamScreenState extends State<TeamScreen> {
     );
   }
 
-  Widget _buildMemberList() {
+  Widget _buildMemberList(String? currentUserId) {
     final filtered = _filterMembers(_members);
     final totalMembers = filtered.length;
     return _buildSectionCard(
@@ -594,7 +599,7 @@ class _TeamScreenState extends State<TeamScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: totalMembers == 0 ? null : _showMembersModal,
+              onPressed: totalMembers == 0 ? null : () => _showMembersModal(currentUserId),
               icon: const Icon(Icons.people_alt_outlined),
               label: const Text('Lihat Anggota'),
             ),
@@ -604,7 +609,7 @@ class _TeamScreenState extends State<TeamScreen> {
     );
   }
 
-  void _showMembersModal() {
+  void _showMembersModal(String? currentUserId) {
     final controller = TextEditingController(text: _searchQuery);
     int page = _memberPage;
 
@@ -693,7 +698,10 @@ class _TeamScreenState extends State<TeamScreen> {
                         shrinkWrap: true,
                         itemCount: pageItems.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) => _buildMemberCard(pageItems[index]),
+                        itemBuilder: (context, index) => _buildMemberCard(
+                          pageItems[index],
+                          currentUserId: currentUserId,
+                        ),
                       ),
                     ),
                   if (filtered.isNotEmpty) const SizedBox(height: 8),
@@ -831,6 +839,13 @@ class _TeamScreenState extends State<TeamScreen> {
 
   Widget _buildManageShiftSection() {
     final dateFormatter = DateFormat('dd MMM yyyy', 'id_ID');
+    final totalAssignments = _assignments.length;
+    final uniqueMembers = _assignments
+        .map((assignment) => assignment.ownerId ?? assignment.owner?.id)
+        .whereType<String>()
+        .toSet()
+        .length;
+    final bkoCount = _assignments.where(_isBackupAssignment).length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -846,84 +861,153 @@ class _TeamScreenState extends State<TeamScreen> {
           ),
         ],
         const SizedBox(height: 12),
-        _buildSectionCard(
-          title: 'Team',
-          child: _leaderTeams.length <= 1
-              ? Text(
-                  _leaderTeams.isNotEmpty ? _leaderTeams.first.name : '-',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                )
-              : DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _manageTeamId,
-                    isExpanded: true,
-                    items: _leaderTeams
-                        .map((team) => DropdownMenuItem(
-                              value: team.id,
-                              child: Text(team.name),
-                            ))
-                        .toList(),
-                    onChanged: (value) async {
-                      if (value == null || value == _manageTeamId) return;
-                      setState(() {
-                        _manageTeamId = value;
-                        _manageMembers = _leaderMembersByTeam[value] ?? [];
-                      });
-                      await _loadManageData();
-                    },
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 520;
+            final teamCard = _buildSectionCard(
+              title: 'Team',
+              child: _leaderTeams.length <= 1
+                  ? Text(
+                      _leaderTeams.isNotEmpty ? _leaderTeams.first.name : '-',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    )
+                  : DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _manageTeamId,
+                        isExpanded: true,
+                        items: _leaderTeams
+                            .map((team) => DropdownMenuItem(
+                                  value: team.id,
+                                  child: Text(team.name),
+                                ))
+                            .toList(),
+                        onChanged: (value) async {
+                          if (value == null || value == _manageTeamId) return;
+                          setState(() {
+                            _manageTeamId = value;
+                            _manageMembers = _leaderMembersByTeam[value] ?? [];
+                          });
+                          await _loadManageData();
+                        },
+                      ),
+                    ),
+            );
+            final quickActionCard = _buildSectionCard(
+              title: 'Aksi Cepat',
+              child: _isManageLoading
+                  ? Column(
+                      children: [
+                        ShimmerLoading(width: double.infinity, height: 44, borderRadius: BorderRadius.circular(10)),
+                        const SizedBox(height: 10),
+                        ShimmerLoading(width: double.infinity, height: 44, borderRadius: BorderRadius.circular(10)),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _manageTeamId == null ? null : _showScheduleModal,
+                          icon: const Icon(Icons.calendar_month_outlined),
+                          label: const Text('Lihat Jadwal'),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Total jadwal di rentang ini: $totalAssignments',
+                          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                        ),
+                      ],
+                    ),
+            );
+            final dateCard = _buildSectionCard(
+              title: 'Rentang Tanggal',
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${dateFormatter.format(_startDate)} - ${dateFormatter.format(_endDate)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
-                ),
-        ),
-        const SizedBox(height: 12),
-        _buildSectionCard(
-          title: 'Rentang Tanggal',
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${dateFormatter.format(_startDate)} - ${dateFormatter.format(_endDate)}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
+                  TextButton(
+                    onPressed: _pickDateRange,
+                    child: const Text('Ubah'),
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: _pickDateRange,
-                child: const Text('Ubah'),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        _buildSectionCard(
-          title: 'Aksi Cepat',
-          child: _isManageLoading
-              ? Column(
-                  children: [
-                    ShimmerLoading(width: double.infinity, height: 44, borderRadius: BorderRadius.circular(10)),
-                    const SizedBox(height: 10),
-                    ShimmerLoading(width: double.infinity, height: 44, borderRadius: BorderRadius.circular(10)),
-                  ],
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: _manageTeamId == null ? null : _showScheduleModal,
-                      icon: const Icon(Icons.calendar_month_outlined),
-                      label: const Text('Lihat Jadwal'),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Total jadwal di rentang ini: ${_assignments.length}',
-                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                    ),
-                  ],
-                ),
+            );
+            
+            final monitoringCard = _buildMonitoringSummaryCard(
+              totalAssignments: totalAssignments,
+              uniqueMembers: uniqueMembers,
+              bkoCount: bkoCount,
+            );
+
+            if (isWide) {
+              // Put Team and Aksi Cepat side by side, and Date below them
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Team
+                  Expanded(
+                    child: teamCard,
+                  ),
+                  const SizedBox(width: 12),
+                  // Aksi Cepat
+                  Expanded(
+                    child: quickActionCard,
+                  ),
+                  // You can add more Expanded here if spacing needed between quickActionCard and below row
+                ],
+              );
+            }
+
+            // Not wide: show vertically
+            return Column(
+              children: [
+                teamCard,
+                const SizedBox(height: 12),
+                quickActionCard,
+                const SizedBox(height: 12),
+                dateCard,
+                const SizedBox(height: 12),
+                monitoringCard,
+              ],
+            );
+          },
         ),
         if (_manageError != null) ...[
           const SizedBox(height: 12),
           _buildErrorCard(message: _manageError),
         ],
       ],
+    );
+  }
+
+  bool _isBackupAssignment(ShiftAssignment assignment) {
+    final note = assignment.notes?.toLowerCase() ?? '';
+    return note.contains('menggantikan') || note.contains('backup') || note.contains('bko');
+  }
+
+  Widget _buildMonitoringSummaryCard({
+    required int totalAssignments,
+    required int uniqueMembers,
+    required int bkoCount,
+  }) {
+    return _buildSectionCard(
+      title: 'Monitoring Shift',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildInfoRow('Total jadwal', totalAssignments.toString()),
+          _buildInfoRow('Anggota terjadwal', uniqueMembers.toString()),
+          _buildInfoRow('BKO/Backup', bkoCount.toString()),
+          const SizedBox(height: 6),
+          Text(
+            'Monitoring bersifat read-only.',
+            style: TextStyle(color: Colors.grey[600], fontSize: 11),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1305,6 +1389,13 @@ class _TeamScreenState extends State<TeamScreen> {
                                       siteName,
                                       style: TextStyle(color: Colors.grey[600], fontSize: 12),
                                     ),
+                                    if (assignment.notes != null && assignment.notes!.trim().isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        assignment.notes!,
+                                        style: TextStyle(color: Colors.grey[700], fontSize: 11),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -1434,7 +1525,7 @@ class _TeamScreenState extends State<TeamScreen> {
     );
   }
 
-  Widget _buildMemberCard(TeamMember member) {
+  Widget _buildMemberCard(TeamMember member, {String? currentUserId}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -1460,7 +1551,9 @@ class _TeamScreenState extends State<TeamScreen> {
                   [member.title, member.siteName].where((item) => (item ?? '').isNotEmpty).join(' - '),
                   style: TextStyle(color: Colors.grey[600], fontSize: 12),
                 ),
-                if (member.externalId != null && member.externalId!.isNotEmpty) ...[
+                if (member.externalId != null &&
+                    member.externalId!.isNotEmpty &&
+                    member.id == currentUserId) ...[
                   const SizedBox(height: 2),
                   Text(
                     'NIK: ${member.externalId}',

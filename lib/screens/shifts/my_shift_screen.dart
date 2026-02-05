@@ -5,6 +5,7 @@ import '../../models/shift_assignment_model.dart';
 import '../../models/shift_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/shift_schedule_service.dart';
+import '../../widgets/shimmer_loading.dart';
 
 class MyShiftScreen extends StatefulWidget {
   const MyShiftScreen({super.key});
@@ -117,7 +118,7 @@ class _MyShiftScreenState extends State<MyShiftScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Shift Saya'),
-        backgroundColor: Theme.of(context).primaryColor,
+        backgroundColor: const Color(0xFF1E88E5),
         foregroundColor: Colors.white,
       ),
       body: RefreshIndicator(
@@ -130,10 +131,7 @@ class _MyShiftScreenState extends State<MyShiftScreen> {
             _buildDateFilterCard(dateFormatter),
             const SizedBox(height: 16),
             if (_isLoading)
-              const Center(child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: CircularProgressIndicator(),
-              ))
+              _buildLoadingSkeleton()
             else if (_error != null)
               _buildErrorCard()
             else
@@ -151,6 +149,44 @@ class _MyShiftScreenState extends State<MyShiftScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingSkeleton() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSkeletonCard(),
+        const SizedBox(height: 12),
+        _buildSkeletonCard(),
+        const SizedBox(height: 12),
+        _buildSkeletonCard(),
+      ],
+    );
+  }
+
+  Widget _buildSkeletonCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ShimmerLoading(width: 120, height: 14, borderRadius: BorderRadius.circular(6)),
+          const SizedBox(height: 10),
+          ShimmerLoading(width: double.infinity, height: 80, borderRadius: BorderRadius.circular(12)),
+        ],
       ),
     );
   }

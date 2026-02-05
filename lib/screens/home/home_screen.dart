@@ -252,7 +252,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     required String label,
   }) {
     final isSelected = _currentIndex == index;
-    final primaryColor = Theme.of(context).primaryColor;
+    const primaryColor = Color(0xFF1E88E5);
     
     return Expanded(
       child: GestureDetector(
@@ -267,7 +267,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.grey[200] : Colors.transparent,
+                  color: isSelected ? primaryColor.withOpacity(0.15) : Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(

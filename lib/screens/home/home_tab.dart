@@ -779,12 +779,43 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     return todayShifts.every(_isOffShift);
   }
 
+  AttendanceRecord? _findOpenAttendanceFromHistory(AttendanceProvider attendanceProvider) {
+    final todayDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    AttendanceRecord? openRecord;
+
+    for (final record in attendanceProvider.todayRecords) {
+      if (record.checkIn != null && record.checkOut == null) {
+        openRecord = record;
+        break;
+      }
+    }
+
+    if (openRecord == null) {
+      for (final record in attendanceProvider.recentAttendance) {
+        if (record.checkIn != null && record.checkOut == null) {
+          openRecord = record;
+          break;
+        }
+      }
+    }
+
+    if (openRecord == null) {
+      return null;
+    }
+
+    if (openRecord.date == todayDate) {
+      return null;
+    }
+
+    return openRecord;
+  }
+
   String _buildOffShiftMessage() {
     if (_teamLeaderNames.isEmpty) {
-      return 'Hari ini OFF. Jika ada kebutuhan masuk, hubungi Pak Aji atau Team Leader Anda.';
+      return 'Hari ini OFF. Jika ada kebutuhan masuk, hubungi supervisor atau Team Leader Anda.';
     }
     final leaders = _teamLeaderNames.join(', ');
-    return 'Hari ini OFF. Jika ada kebutuhan masuk, hubungi Pak Aji atau Team Leader Anda: $leaders.';
+    return 'Hari ini OFF. Jika ada kebutuhan masuk, hubungi supervisor atau Team Leader Anda: $leaders.';
   }
 
   DailyShift? _selectShiftForCheckIn(
@@ -1971,6 +2002,8 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
         final inProgressCount = shiftItems.where((item) => item["status"] == "Sedang bekerja").length;
         final totalShiftCount = shiftItems.length;
         final noShiftToday = todayShifts.isEmpty && todayRecords.isEmpty;
+        final offDayPendingCheckout =
+            _isOffDay(todayShifts) && _findOpenAttendanceFromHistory(attendanceProvider) != null;
         
         // Check and start timer when attendance data changes
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2232,7 +2265,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                     ] else
                       _buildGeofenceHint(context, forCheckOut: false),
                     // Shift Selection (hanya muncul jika belum check-in)
-                    if (!hasCheckedIn) ...[
+                    if (!hasCheckedIn && !offDayPendingCheckout) ...[
                       const SizedBox(height: 16),
                       Text(
                         'SHIFT',
@@ -2248,15 +2281,21 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                     ],
                     const SizedBox(height: 20),
                     // Warning text jika shift belum dipilih (hanya muncul jika belum check-in)
-                    if (!hasCheckedIn)
+                    if (!hasCheckedIn && !offDayPendingCheckout)
                       _buildShiftWarning(context),
-                    if (!hasCheckedIn) const SizedBox(height: 12),
-                    if (hasCheckedIn && !hasCheckedOut) ...[
+                    if (!hasCheckedIn && !offDayPendingCheckout) const SizedBox(height: 12),
+                    if (hasCheckedIn && !hasCheckedOut && !offDayPendingCheckout) ...[
                       _buildGeofenceHint(context, forCheckOut: true),
                       const SizedBox(height: 12),
                     ],
                     // Check-In/Check-Out Button
-                    if (!hasCheckedIn)
+                    if (offDayPendingCheckout)
+                      _buildDisabledCheckInButton(
+                        context,
+                        label: 'Check-In',
+                        message: 'Shift hari ini OFF. Hubungi supervisor untuk koreksi check-out yang tertunda.',
+                      )
+                    else if (!hasCheckedIn)
                       _buildCheckInButton(context)
                     else if (!hasCheckedOut)
                       // Tombol checkout muncul selama sudah check-in dan belum check-out
@@ -2551,7 +2590,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     );
   }
 
-  Widget _buildShiftQuickActions(BuildContext context) {
+  Widget _buildShiftQuickActionsSkeleton() {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -2568,45 +2607,70 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Shift Saya',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-          ),
+          ShimmerLoading(width: 120, height: 14, borderRadius: BorderRadius.circular(6)),
           const SizedBox(height: 12),
-          Consumer<ShiftProvider>(
-            builder: (context, shiftProvider, _) {
-              final isOffDay = _isOffDay(shiftProvider.todayShifts);
-              if (!isOffDay) {
-                return const SizedBox.shrink();
-              }
-              return Column(
-                children: [
-                  _buildOffShiftBanner(),
-                  const SizedBox(height: 12),
-                ],
-              );
-            },
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const MyShiftScreen()),
-                    );
-                  },
-                  icon: const Icon(Icons.calendar_month),
-                  label: const Text('Lihat Shift Saya'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
+          ShimmerLoading(width: double.infinity, height: 44, borderRadius: BorderRadius.circular(10)),
+          const SizedBox(height: 12),
+          ShimmerLoading(width: double.infinity, height: 44, borderRadius: BorderRadius.circular(10)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShiftQuickActions(BuildContext context) {
+    return Consumer<ShiftProvider>(
+      builder: (context, shiftProvider, _) {
+        if (shiftProvider.isLoading) {
+          return _buildShiftQuickActionsSkeleton();
+        }
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
-        ],
-      ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Shift Saya',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              if (_isOffDay(shiftProvider.todayShifts)) ...[
+                _buildOffShiftBanner(),
+                const SizedBox(height: 12),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const MyShiftScreen()),
+                        );
+                      },
+                      icon: const Icon(Icons.calendar_month),
+                      label: const Text('Lihat Shift Saya'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -3043,6 +3107,58 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
           },
         ),
       ),
+    );
+  }
+
+  Widget _buildDisabledCheckInButton(
+    BuildContext context, {
+    required String label,
+    String? message,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ElevatedButton(
+          onPressed: null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.grey[400],
+            foregroundColor: Colors.white70,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 0,
+            disabledBackgroundColor: Colors.grey[400],
+            disabledForegroundColor: Colors.white70,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.login, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (message != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.red[600],
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ],
     );
   }
 
