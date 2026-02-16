@@ -14,6 +14,7 @@ import 'providers/activity_provider.dart';
 import 'providers/request_provider.dart';
 import 'providers/connectivity_provider.dart';
 import 'providers/developer_options_provider.dart';
+import 'providers/checkpoint_provider.dart';
 import 'widgets/developer_options_warning_dialog.dart';
 import 'services/background_tracking_service.dart';
 import 'services/tracking_state_service.dart';
@@ -21,6 +22,9 @@ import 'screens/auth/login_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/attendance/attendance_screen.dart';
 import 'screens/profile/force_password_screen.dart';
+import 'screens/team/team_monitoring_detail_screen.dart';
+import 'screens/incident_report/incident_report_screen.dart';
+import 'screens/activity/activity_screen.dart';
 import 'services/api_service.dart';
 import 'services/persistent_notification_service.dart';
 import 'widgets/update_dialog.dart';
@@ -109,6 +113,7 @@ class _MyAppState extends State<MyApp> {
         ChangeNotifierProvider(create: (_) => ActivityProvider()),
         ChangeNotifierProvider(create: (_) => RequestProvider()),
         ChangeNotifierProvider(create: (_) => DeveloperOptionsProvider()),
+        ChangeNotifierProvider(create: (_) => CheckpointProvider()),
       ],
       child: AppLifecycleHandler(
         child: MaterialApp(
@@ -135,6 +140,18 @@ class _MyAppState extends State<MyApp> {
             '/login': (context) => const LoginScreen(),
             '/home': (context) => const HomeScreen(),
             '/attendance': (context) => const AttendanceScreen(),
+            '/team_monitoring_detail': (context) {
+              final args = ModalRoute.of(context)?.settings.arguments;
+              if (args is Map) {
+                return TeamMonitoringDetailScreen(
+                  teamId: args['teamId'] as String? ?? '',
+                  teamName: args['teamName'] as String? ?? '',
+                );
+              }
+              return const TeamMonitoringDetailScreen(teamId: '', teamName: '');
+            },
+            '/incident_report': (context) => const IncidentReportScreen(),
+            '/activity': (context) => const ActivityScreen(),
           },
         ),
       ),
@@ -160,6 +177,7 @@ class _MyAppState extends State<MyApp> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       authProvider.logout().then((_) {
         debugPrint('[App] Logout completed, redirecting to login...');
+        ApiService().resetSessionExpiredState();
         // Wait a bit untuk memastikan state sudah update
         Future.delayed(const Duration(milliseconds: 200), () {
           final navContext = navigatorKey.currentContext;

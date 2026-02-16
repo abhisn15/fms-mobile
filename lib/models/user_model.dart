@@ -167,7 +167,8 @@ class Site {
   final double? longitude;
   final int? maxRadiusMeters;
   final int? lateToleranceMinutes;
-
+  final Map<String, dynamic>? featureFlags;
+  
   Site({
     required this.id,
     required this.siteId,
@@ -176,7 +177,18 @@ class Site {
     this.longitude,
     this.maxRadiusMeters,
     this.lateToleranceMinutes,
+    this.featureFlags,
   });
+
+  /// Cek apakah feature flag tertentu aktif
+  bool hasFeature(String key) {
+    if (featureFlags == null) return false;
+    final value = featureFlags![key];
+    return value == true;
+  }
+
+  /// Shortcut: apakah checkpoint enabled untuk site ini
+  bool get enableCheckpoint => hasFeature('enableCheckpoint');
 
   factory Site.fromJson(Map<String, dynamic> json) {
     return Site(
@@ -187,6 +199,9 @@ class Site {
       longitude: _parseDouble(json['longitude']),
       maxRadiusMeters: _parseInt(json['maxRadiusMeters']),
       lateToleranceMinutes: _parseInt(json['lateToleranceMinutes']),
+      featureFlags: json['featureFlags'] is Map<String, dynamic>
+          ? json['featureFlags'] as Map<String, dynamic>
+          : null,
     );
   }
 
@@ -199,6 +214,7 @@ class Site {
       'longitude': longitude,
       'maxRadiusMeters': maxRadiusMeters,
       'lateToleranceMinutes': lateToleranceMinutes,
+      if (featureFlags != null) 'featureFlags': featureFlags,
     };
   }
 }

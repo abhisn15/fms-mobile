@@ -17,7 +17,12 @@ class ApiService {
   void setSessionExpiredCallback(SessionExpiredCallback callback) {
     _onSessionExpired = callback;
   }
-  
+
+  /// Reset state setelah logout selesai, agar auto-logout bisa trigger lagi jika session expired di login berikutnya
+  void resetSessionExpiredState() {
+    _isLoggingOut = false;
+  }
+
   ApiService._internal() {
     _dio = Dio(BaseOptions(
       baseUrl: ApiConfig.baseUrl,

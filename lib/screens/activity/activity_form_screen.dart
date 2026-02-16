@@ -7,6 +7,9 @@ import '../../providers/activity_provider.dart';
 import '../../screens/camera/camera_screen.dart';
 import '../../config/api_config.dart';
 import '../../utils/toast_helper.dart';
+import '../../models/checkpoint_model.dart';
+import '../../providers/checkpoint_provider.dart';
+import '../../widgets/checkpoint_timeline_widget.dart';
 
 class ActivityFormScreen extends StatefulWidget {
   final String? activityId; // If provided, edit mode; otherwise, create mode
@@ -29,10 +32,41 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
   void initState() {
     super.initState();
     if (widget.activityId != null) {
-      // Delay loading to avoid calling during build
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadActivity();
       });
+    }
+  }
+
+  Future<void> _handleCheckpointComplete(
+    String itemId, {
+    File? photoBefore,
+    File? photoAfter,
+    List<File>? photosBefore,
+    List<File>? photosAfter,
+    String? notes,
+    double? latitude,
+    double? longitude,
+    double? accuracy,
+  }) async {
+    final cp = Provider.of<CheckpointProvider>(context, listen: false);
+    final success = await cp.completeItem(
+      itemId,
+      photoBefore: photoBefore,
+      photoAfter: photoAfter,
+      photosBefore: photosBefore,
+      photosAfter: photosAfter,
+      notes: notes,
+      latitude: latitude,
+      longitude: longitude,
+      accuracy: accuracy,
+    );
+    if (mounted) {
+      if (success) {
+        ToastHelper.showSuccess(context, 'Checkpoint selesai!');
+      } else {
+        ToastHelper.showError(context, cp.error ?? 'Gagal menyelesaikan checkpoint');
+      }
     }
   }
 
@@ -205,6 +239,39 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
       );
     }
 
+    // === CHECKPOINT MODE: Read from provider (pre-fetched by home) ===
+    final cp = Provider.of<CheckpointProvider>(context);
+    final hasCheckpoint = widget.activityId == null && cp.hasCheckpoint && cp.template != null;
+
+    if (hasCheckpoint) {
+      return Scaffold(
+        backgroundColor: Colors.grey.shade50,
+        appBar: AppBar(
+          title: const Text('Checkpoint Hari Ini'),
+          centerTitle: true,
+          elevation: 0,
+          backgroundColor: Colors.blue.shade600,
+          foregroundColor: Colors.white,
+          titleTextStyle: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            CheckpointTimelineWidget(
+              template: cp.template!,
+              progress: cp.progress,
+              onComplete: _handleCheckpointComplete,
+            ),
+          ],
+        ),
+      );
+    }
+
+    // === DEFAULT MODE: Form daily activity biasa ===
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.activityId != null ? 'Edit Aktivitas' : 'Tambah Aktivitas'),

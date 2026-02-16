@@ -175,13 +175,49 @@ class AttendanceProvider with ChangeNotifier {
     if (!isConnected) {
       return;
     }
-    syncPendingAttendance();
-    debugPrint('[AttendanceProvider] Sync pending location logs');
-    _realtimeService.syncPendingLocationLogs().catchError((e) {
-      debugPrint('[AttendanceProvider] syncPendingLocationLogs not available: $e');
+
+    Future.microtask(() async {
+      await _enforceTrackingPolicy();
+      await syncPendingAttendance();
+      debugPrint('[AttendanceProvider] Sync pending location logs');
+      _realtimeService.syncPendingLocationLogs().catchError((e) {
+        debugPrint('[AttendanceProvider] syncPendingLocationLogs not available: $e');
+      });
+      await syncRealtimeTracking();
+      await ensureBackgroundTracking();
     });
-    syncRealtimeTracking();
-    ensureBackgroundTracking(); // Pastikan background service running
+  }
+
+  Future<void> _enforceTrackingPolicy() async {
+    final today = todayAttendance;
+    final hasActiveAttendance =
+        today != null && today.checkIn != null && today.checkOut == null;
+
+    final trackingSettings = await _getEffectiveTrackingSettings();
+    final isEnabled = trackingSettings['isEnabled'] as bool? ?? false;
+
+    if (!isEnabled || !hasActiveAttendance) {
+      if (_realtimeService.isTracking) {
+        try {
+          await _realtimeService.stopRealtimeTracking();
+        } catch (e) {
+          debugPrint('[AttendanceProvider] Failed to stop realtime tracking during policy enforce: $e');
+        }
+      }
+
+      try {
+        await BackgroundTrackingService.stop();
+      } catch (e) {
+        debugPrint('[AttendanceProvider] Failed to stop background tracking during policy enforce: $e');
+      }
+
+      _realtimeTrackingInitialized = false;
+      _backgroundTrackingInitialized = false;
+
+      if (!isEnabled) {
+        debugPrint('[AttendanceProvider] Tracking policy: disabled by site/global feature flags');
+      }
+    }
   }
 
   Future<void> _ensureRealtimeTracking() async {
@@ -217,15 +253,28 @@ class AttendanceProvider with ChangeNotifier {
       checkInDate = DateTime.now();
     }
 
+    final trackingSettings = await _getEffectiveTrackingSettings();
+    final intervalSeconds = trackingSettings['intervalSeconds'] as int? ?? 60;
+    final isEnabled = trackingSettings['isEnabled'] as bool? ?? false;
+
+    if (!isEnabled) {
+      debugPrint('[AttendanceProvider] Realtime tracking disabled for this site/user, skipping auto-start');
+      try {
+        await _realtimeService.stopRealtimeTracking();
+      } catch (_) {}
+      _realtimeTrackingInitialized = false;
+      return;
+    }
+
     try {
       await _realtimeService.startRealtimeTracking(
         user: user,
         attendanceId: today.id,
         checkInDate: checkInDate,
-        intervalSeconds: 60, // 1 minute default
+        intervalSeconds: intervalSeconds,
       );
       _realtimeTrackingInitialized = true;
-      debugPrint('[AttendanceProvider] ✓ Realtime tracking started (auto sync)');
+      debugPrint('[AttendanceProvider] Realtime tracking started (auto sync)');
     } catch (e) {
       debugPrint('[AttendanceProvider] Failed to auto-start tracking: $e');
     }
@@ -348,6 +397,8 @@ class AttendanceProvider with ChangeNotifier {
       _isLoading = false;
       _loadAttendanceInProgress = false;
 
+      await _enforceTrackingPolicy();
+
       // Only initialize tracking services if we don't have attendance data yet
       // This prevents double initialization on every loadAttendance call
       if (todayAttendance != null) {
@@ -368,6 +419,34 @@ class AttendanceProvider with ChangeNotifier {
 
   Future<Map<String, dynamic>> getLocationSettings() async {
     return await _attendanceService.getLocationSettings();
+  }
+
+  Future<Map<String, dynamic>> _getEffectiveTrackingSettings() async {
+    int intervalSeconds = 60;
+    bool isEnabled = false;
+
+    try {
+      final locationSettings = await getLocationSettings();
+      final settingsData = locationSettings['data'];
+      if (settingsData is Map) {
+        final intervalRaw = settingsData['intervalSeconds'];
+        final enabledRaw = settingsData['isEnabled'];
+
+        if (intervalRaw is num && intervalRaw > 0) {
+          intervalSeconds = intervalRaw.toInt();
+        }
+        if (enabledRaw is bool) {
+          isEnabled = enabledRaw;
+        }
+      }
+    } catch (e) {
+      debugPrint('[AttendanceProvider] Failed to load effective tracking settings: $e');
+    }
+
+    return {
+      'intervalSeconds': intervalSeconds,
+      'isEnabled': isEnabled,
+    };
   }
 
   Future<bool> checkIn({
@@ -459,81 +538,66 @@ class AttendanceProvider with ChangeNotifier {
             try {
               debugPrint('[AttendanceProvider] Starting realtime location tracking...');
 
-              if (user != null && responseAttendanceId != null) {
-                debugPrint('[AttendanceProvider] Using attendance ID from response: $responseAttendanceId');
+              final trackingSettings = await _getEffectiveTrackingSettings();
+              final intervalSeconds = trackingSettings['intervalSeconds'] as int? ?? 60;
+              final isEnabled = trackingSettings['isEnabled'] as bool? ?? false;
 
-                // Get location tracking settings from server
-                debugPrint('[AttendanceProvider] Getting location tracking settings from server...');
-                int intervalSeconds = 60; // Default 1 minute
-                bool isEnabled = true;
+              debugPrint('[AttendanceProvider] Effective tracking settings: interval=$intervalSeconds, enabled=$isEnabled');
 
-                try {
-                  final locationSettings = await getLocationSettings();
-                  final settingsData = locationSettings['data'] as Map<String, dynamic>?;
-                  intervalSeconds = settingsData?['intervalSeconds'] as int? ?? 60;
-                  isEnabled = settingsData?['isEnabled'] as bool? ?? true;
+              if (!isEnabled) {
+                debugPrint('[AttendanceProvider] Realtime tracking disabled by site/global settings');
+                await _realtimeService.stopRealtimeTracking();
+              } else {
+                if (user != null && responseAttendanceId != null) {
+                  debugPrint('[AttendanceProvider] Using attendance ID from response: $responseAttendanceId');
 
-                  debugPrint('[AttendanceProvider] ✅ Location tracking settings loaded: interval=$intervalSeconds seconds (1 min default), enabled=$isEnabled');
-                } catch (e) {
-                  debugPrint('[AttendanceProvider] ⚠️ Failed to load location settings from server: $e');
-                  debugPrint('[AttendanceProvider] 🔄 Using default settings: interval=$intervalSeconds seconds (1 min), enabled=$isEnabled');
-                }
-
-                // Use server setting or default to 60 seconds (1 minute)
-                debugPrint('[AttendanceProvider] 📊 Final interval: $intervalSeconds seconds');
-
-                if (isEnabled) {
                   try {
                     await _realtimeService.startRealtimeTracking(
                       user: user,
                       attendanceId: responseAttendanceId,
                       checkInDate: responseCheckInDate ?? now,
-                      intervalSeconds: intervalSeconds, // Dynamic from server
+                      intervalSeconds: intervalSeconds,
                     );
-                    debugPrint('[AttendanceProvider] ✅ Realtime tracking started with interval: $intervalSeconds seconds');
+                    debugPrint('[AttendanceProvider] Realtime tracking started with interval: $intervalSeconds seconds');
                     trackingStarted = true;
-                    debugPrint('[AttendanceProvider] ?o" Realtime tracking started (response record)');
+                    debugPrint('[AttendanceProvider] Realtime tracking started (response record)');
                   } catch (e) {
-                    debugPrint('[AttendanceProvider] ❌ Failed to start realtime tracking: $e');
+                    debugPrint('[AttendanceProvider] Failed to start realtime tracking: $e');
 
-                    // If permission error, show guidance (will be handled by UI)
                     if (e.toString().contains('izin') || e.toString().contains('permission')) {
-                      debugPrint('[AttendanceProvider] 🎯 Permission error detected');
-                      rethrow; // Let UI handle the permission dialog
+                      debugPrint('[AttendanceProvider] Permission error detected');
+                      rethrow;
                     }
                   }
                 }
-              }
 
-              if (!trackingStarted) {
-                // Wait a bit for attendance data to be updated
-                await Future.delayed(const Duration(milliseconds: 500));
+                if (!trackingStarted) {
+                  await Future.delayed(const Duration(milliseconds: 500));
 
-                final todayRecord = todayAttendance;
-                debugPrint('[AttendanceProvider] Today attendance: ${todayRecord?.checkIn} - ${todayRecord?.checkOut}, ID: ${todayRecord?.id}');
+                  final todayRecord = todayAttendance;
+                  debugPrint('[AttendanceProvider] Today attendance: ${todayRecord?.checkIn} - ${todayRecord?.checkOut}, ID: ${todayRecord?.id}');
 
-                if (user != null && todayRecord != null) {
-                  debugPrint('[AttendanceProvider] ?o. User and attendance record available');
+                  if (user != null && todayRecord != null) {
+                    debugPrint('[AttendanceProvider] User and attendance record available');
 
-                  // Use attendance ID if available, otherwise use a temporary ID
-                  final attendanceId = todayRecord.id.isNotEmpty ? todayRecord.id : 'temp-${user.id}-${now.millisecondsSinceEpoch}';
-                  debugPrint('[AttendanceProvider] Using attendance ID: $attendanceId');
+                    final attendanceId = todayRecord.id.isNotEmpty ? todayRecord.id : 'temp-${user.id}-${now.millisecondsSinceEpoch}';
+                    debugPrint('[AttendanceProvider] Using attendance ID: $attendanceId');
 
-                  await _realtimeService.startRealtimeTracking(
-                    user: user,
-                    attendanceId: attendanceId,
-                    checkInDate: now,
-                    intervalSeconds: 60, // 1 minute default
-                  );
-                  debugPrint('[AttendanceProvider] ?o" Realtime tracking started successfully');
-                } else {
-                  debugPrint('[AttendanceProvider] ??O Cannot start tracking: user=${user != null}, todayRecord=${todayRecord != null}');
+                    await _realtimeService.startRealtimeTracking(
+                      user: user,
+                      attendanceId: attendanceId,
+                      checkInDate: now,
+                      intervalSeconds: intervalSeconds,
+                    );
+                    debugPrint('[AttendanceProvider] Realtime tracking started successfully');
+                  } else {
+                    debugPrint('[AttendanceProvider] Cannot start tracking: user=${user != null}, todayRecord=${todayRecord != null}');
+                  }
                 }
               }
             } catch (e) {
-              debugPrint('[AttendanceProvider] ❌ Failed to start realtime tracking: $e');
+              debugPrint('[AttendanceProvider] Failed to start realtime tracking: $e');
               debugPrint('[AttendanceProvider] Stack trace: ${e.toString()}');
-              // Don't fail check-in just because tracking failed
             }
 
             // Pastikan background tracking service juga running
@@ -1017,10 +1081,14 @@ class AttendanceProvider with ChangeNotifier {
         final today = todayAttendance!;
         if (today.checkIn != null && today.checkOut == null) {
           debugPrint('[AttendanceProvider] 🔄 Force restarting location tracking...');
-          // Get current settings for testing
-          final locationSettings = await getLocationSettings();
-          final settingsData = locationSettings['data'] as Map<String, dynamic>?;
-          final intervalSeconds = settingsData?['intervalSeconds'] as int? ?? 300;
+          final trackingSettings = await _getEffectiveTrackingSettings();
+          final intervalSeconds = trackingSettings['intervalSeconds'] as int? ?? 300;
+          final isEnabled = trackingSettings['isEnabled'] as bool? ?? false;
+
+          if (!isEnabled) {
+            debugPrint('[AttendanceProvider] Tracking disabled by site/global settings, test skipped');
+            return;
+          }
 
           await _realtimeService.startRealtimeTracking(
             user: user,
@@ -1062,17 +1130,29 @@ class AttendanceProvider with ChangeNotifier {
       checkInDate = DateTime.now();
     }
 
+    final trackingSettings = await _getEffectiveTrackingSettings();
+    final intervalSeconds = trackingSettings['intervalSeconds'] as int? ?? 60;
+    final isEnabled = trackingSettings['isEnabled'] as bool? ?? false;
+
+    if (!isEnabled) {
+      try {
+        await _realtimeService.stopRealtimeTracking();
+      } catch (_) {}
+      debugPrint('[AttendanceProvider] Tracking disabled by site/global settings, skip resume');
+      return;
+    }
+
     final attendanceId = today.id.isNotEmpty
         ? today.id
         : 'temp-${user.id}-${DateTime.now().millisecondsSinceEpoch}';
 
     try {
-    await _realtimeService.startRealtimeTracking(
-      user: user,
-      attendanceId: attendanceId,
-      checkInDate: checkInDate,
-      intervalSeconds: 60, // 1 minute default
-    );
+      await _realtimeService.startRealtimeTracking(
+        user: user,
+        attendanceId: attendanceId,
+        checkInDate: checkInDate,
+        intervalSeconds: intervalSeconds,
+      );
     } catch (e) {
       debugPrint('[AttendanceProvider] Failed to resume tracking: $e');
     }
@@ -1080,7 +1160,6 @@ class AttendanceProvider with ChangeNotifier {
 
   /// Pastikan background service tetap running untuk location tracking
   Future<void> ensureBackgroundTracking() async {
-    // Prevent double initialization
     if (_backgroundTrackingInitialized) {
       debugPrint('[AttendanceProvider] Background tracking already initialized, skipping');
       return;
@@ -1092,13 +1171,20 @@ class AttendanceProvider with ChangeNotifier {
       return;
     }
 
+    final trackingSettings = await _getEffectiveTrackingSettings();
+    final isEnabled = trackingSettings['isEnabled'] as bool? ?? false;
+    if (!isEnabled) {
+      debugPrint('[AttendanceProvider] Background tracking skipped: disabled by site/global settings');
+      _backgroundTrackingInitialized = false;
+      return;
+    }
+
     try {
-      // Pastikan background service running
-      debugPrint('[AttendanceProvider] 🚀 Starting background tracking service...');
+      debugPrint('[AttendanceProvider] Starting background tracking service...');
       await BackgroundTrackingService.ensureRunning();
-      debugPrint('[AttendanceProvider] ✅ Background tracking service started');
+      debugPrint('[AttendanceProvider] Background tracking service started');
       _backgroundTrackingInitialized = true;
-      debugPrint('[AttendanceProvider] ✓ Background tracking service initialized');
+      debugPrint('[AttendanceProvider] Background tracking service initialized');
     } catch (e) {
       debugPrint('[AttendanceProvider] Failed to ensure background tracking: $e');
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
 import '../../providers/auth_provider.dart';
@@ -140,6 +141,19 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
     }
   }
 
+  /// Saat kolom kosong dan user tekan Backspace, pindah fokus ke kolom sebelumnya dan hapus nilainya.
+  KeyEventResult _onOTPKey(int index, KeyEvent event) {
+    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.backspace) {
+      return KeyEventResult.ignored;
+    }
+    if (_otpControllers[index].text.isEmpty && index > 0) {
+      _otpControllers[index - 1].clear();
+      _focusNodes[index - 1].requestFocus();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -202,30 +216,33 @@ class _OTPVerificationScreenState extends State<OTPVerificationScreen> {
                 children: List.generate(6, (index) {
                   return SizedBox(
                     width: 45,
-                    child: TextFormField(
-                      controller: _otpControllers[index],
-                      focusNode: _focusNodes[index],
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      maxLength: 1,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      decoration: InputDecoration(
-                        counterText: '',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                    child: Focus(
+                      onKeyEvent: (FocusNode node, KeyEvent event) => _onOTPKey(index, event),
+                      child: TextFormField(
+                        controller: _otpControllers[index],
+                        focusNode: _focusNodes[index],
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.center,
+                        maxLength: 1,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
                         ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(context).primaryColor,
-                            width: 2,
+                        decoration: InputDecoration(
+                          counterText: '',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).primaryColor,
+                              width: 2,
+                            ),
                           ),
                         ),
+                        onChanged: (value) => _onOTPChanged(index, value),
                       ),
-                      onChanged: (value) => _onOTPChanged(index, value),
                     ),
                   );
                 }),

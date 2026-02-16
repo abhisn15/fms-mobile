@@ -238,51 +238,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// Beri rating aplikasi:
+  /// - Jika dari Play Store: coba tampilkan dialog in-app dulu; lalu selalu buka halaman aplikasi di Play Store
+  ///   (dialog sering tidak muncul karena quota/bukan dari Play Store, jadi fallback ke halaman store).
+  /// - Jika bukan dari Play Store / gagal: langsung buka halaman aplikasi di Play Store.
   Future<void> _rateApp() async {
-    final packageName = _packageInfo?.packageName;
+    bool tryInAppFirst = false;
     try {
-      final available = await _inAppReview.isAvailable();
-      if (available) {
+      tryInAppFirst = await _inAppReview.isAvailable();
+      if (tryInAppFirst) {
         await _inAppReview.requestReview();
-        return;
+        // Dialog mungkin tidak muncul (quota / kebijakan Google). Tetap buka store setelah jeda singkat.
+        await Future.delayed(const Duration(milliseconds: 1500));
+        if (!mounted) return;
       }
     } catch (e) {
       debugPrint('[Settings] In-app review not available: $e');
     }
 
-    if (packageName == null || packageName.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Gagal membuka Play Store. Paket aplikasi tidak ditemukan.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
+    // Selalu buka halaman aplikasi di Play Store agar user bisa beri rating/ulasan di sana.
+    bool opened = false;
+    try {
+      await _inAppReview.openStoreListing();
+      opened = true;
+    } catch (e) {
+      debugPrint('[Settings] openStoreListing failed: $e');
     }
 
-    final marketUri = Uri.parse('market://details?id=$packageName');
-    final webUri = Uri.parse('https://play.google.com/store/apps/details?id=$packageName');
-
-    try {
-      final openedMarket = await launchUrl(marketUri, mode: LaunchMode.externalApplication);
-      if (!openedMarket) {
-        final openedWeb = await launchUrl(webUri, mode: LaunchMode.externalApplication);
-        if (!openedWeb && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Tidak bisa membuka Play Store.'),
-              backgroundColor: Colors.red,
-            ),
-          );
+    if (!opened) {
+      final packageName = _packageInfo?.packageName;
+      if (packageName != null && packageName.isNotEmpty) {
+        final marketUri = Uri.parse('market://details?id=$packageName');
+        try {
+          opened = await launchUrl(marketUri, mode: LaunchMode.externalApplication);
+        } catch (_) {}
+        if (!opened) {
+          final webUri = Uri.parse('https://play.google.com/store/apps/details?id=$packageName');
+          try {
+            opened = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+          } catch (_) {}
         }
       }
-    } catch (e) {
-      if (!mounted) return;
+    }
+
+    if (!mounted) return;
+    if (opened) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal membuka Play Store: $e'),
+        const SnackBar(
+          content: Text('Buka Play Store. Silakan tap "Beri rating" atau "Tulis ulasan" di halaman aplikasi.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gagal membuka Play Store. Pastikan Play Store terpasang atau buka tautan dari browser.'),
           backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
         ),
       );
     }
@@ -441,7 +453,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.star_rate_rounded, color: Colors.amber),
             title: const Text('Beri Rating Aplikasi'),
-            subtitle: const Text('Buka Play Store untuk memberi rating'),
+            subtitle: const Text('Beri rating & ulasan di Play Store (dialog in-app atau buka halaman aplikasi)'),
             trailing: const Icon(Icons.chevron_right),
             onTap: _rateApp,
           ),

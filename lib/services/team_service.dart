@@ -1,9 +1,10 @@
-import 'package:flutter/foundation.dart';
 import '../services/api_service.dart';
 import '../config/api_config.dart';
 import '../models/team_model.dart';
 import '../models/shift_model.dart';
 import '../models/shift_assignment_model.dart';
+import '../models/attendance_model.dart';
+import '../models/team_task_model.dart';
 
 class TeamServiceException implements Exception {
   final String message;
@@ -24,7 +25,9 @@ class TeamService {
       if (data is List) {
         return data
             .where((e) => e is Map)
-            .map((e) => TeamSummary.fromJson(Map<String, dynamic>.from(e as Map)))
+            .map(
+              (e) => TeamSummary.fromJson(Map<String, dynamic>.from(e as Map)),
+            )
             .toList();
       }
       return [];
@@ -46,11 +49,7 @@ class TeamService {
     while (true) {
       final response = await _apiService.get(
         ApiConfig.leaderTeamMembers,
-        queryParameters: {
-          'teamId': teamId,
-          'limit': limit,
-          'page': page,
-        },
+        queryParameters: {'teamId': teamId, 'limit': limit, 'page': page},
       );
 
       if (response.statusCode != 200) {
@@ -87,7 +86,9 @@ class TeamService {
       if (data is List) {
         return data
             .where((e) => e is Map)
-            .map((e) => TeamSummary.fromJson(Map<String, dynamic>.from(e as Map)))
+            .map(
+              (e) => TeamSummary.fromJson(Map<String, dynamic>.from(e as Map)),
+            )
             .toList();
       }
       return [];
@@ -150,10 +151,14 @@ class TeamService {
       params['ownerIds'] = ownerIds;
     }
 
-    final response = await _apiService.get(ApiConfig.leaderShiftAssignments, queryParameters: params);
+    final response = await _apiService.get(
+      ApiConfig.leaderShiftAssignments,
+      queryParameters: params,
+    );
     if (response.statusCode != 200) {
       throw TeamServiceException(
-        response.data?['message']?.toString() ?? 'Gagal memuat jadwal shift team',
+        response.data?['message']?.toString() ??
+            'Gagal memuat jadwal shift team',
         statusCode: response.statusCode,
       );
     }
@@ -162,7 +167,10 @@ class TeamService {
     if (data is List) {
       return data
           .where((e) => e is Map)
-          .map((e) => ShiftAssignment.fromJson(Map<String, dynamic>.from(e as Map)))
+          .map(
+            (e) =>
+                ShiftAssignment.fromJson(Map<String, dynamic>.from(e as Map)),
+          )
           .toList();
     }
     return [];
@@ -207,10 +215,7 @@ class TeamService {
   }) async {
     final response = await _apiService.delete(
       ApiConfig.leaderShiftAssignments,
-      data: {
-        'teamId': teamId,
-        'id': assignmentId,
-      },
+      data: {'teamId': teamId, 'id': assignmentId},
     );
 
     if (response.statusCode != 200) {
@@ -219,5 +224,223 @@ class TeamService {
         statusCode: response.statusCode,
       );
     }
+  }
+
+  /// GET leader attendance report for team (for monitoring check-in).
+  /// Uses teamId, startDate, endDate, optional page and limit.
+  Future<LeaderAttendanceReport> getLeaderAttendance({
+    required String teamId,
+    required DateTime startDate,
+    required DateTime endDate,
+    int page = 1,
+    int limit = 200,
+  }) async {
+    String formatDate(DateTime date) {
+      final year = date.year.toString().padLeft(4, '0');
+      final month = date.month.toString().padLeft(2, '0');
+      final day = date.day.toString().padLeft(2, '0');
+      return '$year-$month-$day';
+    }
+
+    final response = await _apiService.get(
+      ApiConfig.leaderAttendance,
+      queryParameters: {
+        'teamId': teamId,
+        'startDate': formatDate(startDate),
+        'endDate': formatDate(endDate),
+        'page': page,
+        'limit': limit,
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw TeamServiceException(
+        response.data?['message']?.toString() ??
+            'Gagal memuat laporan kehadiran',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final data = response.data?['data'];
+    if (data is! Map<String, dynamic>) {
+      return LeaderAttendanceReport(
+        summary: LeaderAttendanceReportSummary(
+          present: 0,
+          absent: 0,
+          late: 0,
+          leave: 0,
+          pendingValidation: 0,
+        ),
+        logs: [],
+        pagination: null,
+      );
+    }
+
+    return LeaderAttendanceReport.fromJson(data);
+  }
+
+  Future<List<TeamTask>> getLeaderTasks({
+    String? teamId,
+    String? status,
+    String? assigneeId,
+    String? search,
+    int page = 1,
+    int limit = 50,
+  }) async {
+    final response = await _apiService.get(
+      ApiConfig.leaderTasks,
+      queryParameters: {
+        if (teamId != null && teamId.isNotEmpty) 'teamId': teamId,
+        if (status != null && status.isNotEmpty) 'status': status,
+        if (assigneeId != null && assigneeId.isNotEmpty)
+          'assigneeId': assigneeId,
+        if (search != null && search.isNotEmpty) 'search': search,
+        'page': page,
+        'limit': limit,
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw TeamServiceException(
+        response.data?['message']?.toString() ?? 'Gagal memuat tugas team',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final raw = response.data?['data'];
+    if (raw is! List) return [];
+    return raw
+        .where((e) => e is Map)
+        .map((e) => TeamTask.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<TeamTask> createLeaderTask({
+    required String teamId,
+    required String assigneeId,
+    required String title,
+    String? description,
+    DateTime? dueDate,
+    String status = 'todo',
+  }) async {
+    final response = await _apiService.post(
+      ApiConfig.leaderTasks,
+      data: {
+        'teamId': teamId,
+        'assigneeId': assigneeId,
+        'title': title,
+        'description': description,
+        'dueDate': dueDate?.toIso8601String(),
+        'status': status,
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw TeamServiceException(
+        response.data?['message']?.toString() ?? 'Gagal membuat tugas team',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final data = response.data?['data'];
+    if (data is! Map) {
+      throw TeamServiceException('Respons tugas tidak valid');
+    }
+    return TeamTask.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<TeamTask> updateLeaderTask(
+    String taskId, {
+    String? title,
+    String? description,
+    String? status,
+    DateTime? dueDate,
+    String? assigneeId,
+  }) async {
+    final response = await _apiService.patch(
+      '${ApiConfig.leaderTasks}/$taskId',
+      data: {
+        if (title != null) 'title': title,
+        if (description != null) 'description': description,
+        if (status != null) 'status': status,
+        if (dueDate != null) 'dueDate': dueDate.toIso8601String(),
+        if (assigneeId != null) 'assigneeId': assigneeId,
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw TeamServiceException(
+        response.data?['message']?.toString() ?? 'Gagal memperbarui tugas team',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final data = response.data?['data'];
+    if (data is! Map) {
+      throw TeamServiceException('Respons tugas tidak valid');
+    }
+    return TeamTask.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<void> deleteLeaderTask(String taskId) async {
+    final response = await _apiService.delete(
+      '${ApiConfig.leaderTasks}/$taskId',
+    );
+    if (response.statusCode != 200) {
+      throw TeamServiceException(
+        response.data?['message']?.toString() ?? 'Gagal menghapus tugas team',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<List<TeamTask>> getMyTasks({
+    String? status,
+    int page = 1,
+    int limit = 50,
+  }) async {
+    final response = await _apiService.get(
+      ApiConfig.essTasks,
+      queryParameters: {
+        if (status != null && status.isNotEmpty) 'status': status,
+        'page': page,
+        'limit': limit,
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw TeamServiceException(
+        response.data?['message']?.toString() ?? 'Gagal memuat tugas Anda',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final raw = response.data?['data'];
+    if (raw is! List) return [];
+    return raw
+        .where((e) => e is Map)
+        .map((e) => TeamTask.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<TeamTask> updateMyTaskStatus(String taskId, String status) async {
+    final response = await _apiService.patch(
+      '${ApiConfig.essTasks}/$taskId',
+      data: {'status': status},
+    );
+
+    if (response.statusCode != 200) {
+      throw TeamServiceException(
+        response.data?['message']?.toString() ??
+            'Gagal memperbarui status tugas',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final data = response.data?['data'];
+    if (data is! Map) {
+      throw TeamServiceException('Respons tugas tidak valid');
+    }
+    return TeamTask.fromJson(Map<String, dynamic>.from(data));
   }
 }

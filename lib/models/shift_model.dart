@@ -7,6 +7,8 @@ class DailyShift {
   final String? color;
   final bool isWfh;
   final ShiftPattern? pattern;
+  /// workday | off — untuk filter monitoring: hanya tampilkan yang workday
+  final String? dayType;
 
   DailyShift({
     required this.id,
@@ -17,9 +19,27 @@ class DailyShift {
     this.color,
     this.isWfh = false,
     this.pattern,
+    this.dayType,
   });
 
+  bool get isOff {
+    final v = dayType;
+    if (v == null) return false;
+    try {
+      return v.toString().toLowerCase() == 'off';
+    } catch (_) {
+      return false;
+    }
+  }
+
   factory DailyShift.fromJson(Map<String, dynamic> json) {
+    Object? rawDayType = json['dayType'];
+    String? dayType;
+    if (rawDayType is String) {
+      dayType = rawDayType;
+    } else if (rawDayType != null) {
+      dayType = rawDayType.toString();
+    }
     return DailyShift(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
@@ -31,6 +51,7 @@ class DailyShift {
       pattern: json['pattern'] != null
           ? ShiftPattern.fromJson(json['pattern'] as Map<String, dynamic>)
           : null,
+      dayType: dayType,
     );
   }
 }

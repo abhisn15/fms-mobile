@@ -93,9 +93,11 @@ class Location {
   Location({required this.lat, required this.lng});
 
   factory Location.fromJson(Map<String, dynamic> json) {
+    final latVal = json['lat'];
+    final lngVal = json['lng'];
     return Location(
-      lat: (json['lat'] as num).toDouble(),
-      lng: (json['lng'] as num).toDouble(),
+      lat: (latVal is num) ? latVal.toDouble() : (double.tryParse(latVal?.toString() ?? '') ?? 0.0),
+      lng: (lngVal is num) ? lngVal.toDouble() : (double.tryParse(lngVal?.toString() ?? '') ?? 0.0),
     );
   }
 
@@ -183,5 +185,140 @@ class AttendancePayload {
       'today': today.map((e) => e.toJson()).toList(),
       'recent': recent.map((e) => e.toJson()).toList(),
     };
+  }
+}
+
+/// Summary for leader attendance report (team monitoring).
+class LeaderAttendanceReportSummary {
+  final int present;
+  final int absent;
+  final int late;
+  final int leave;
+  final int pendingValidation;
+
+  LeaderAttendanceReportSummary({
+    required this.present,
+    required this.absent,
+    required this.late,
+    required this.leave,
+    required this.pendingValidation,
+  });
+
+  factory LeaderAttendanceReportSummary.fromJson(Map<String, dynamic> json) {
+    return LeaderAttendanceReportSummary(
+      present: (json['present'] as num?)?.toInt() ?? 0,
+      absent: (json['absent'] as num?)?.toInt() ?? 0,
+      late: (json['late'] as num?)?.toInt() ?? 0,
+      leave: (json['leave'] as num?)?.toInt() ?? 0,
+      pendingValidation: (json['pendingValidation'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// Single log row from leader attendance report (for team monitoring list).
+class LeaderAttendanceLogItem {
+  final String id;
+  final String userId;
+  final String date;
+  final String status;
+  final String? checkIn;
+  final String? checkOut;
+  final String userName;
+  final String? shiftName;
+
+  LeaderAttendanceLogItem({
+    required this.id,
+    required this.userId,
+    required this.date,
+    required this.status,
+    this.checkIn,
+    this.checkOut,
+    required this.userName,
+    this.shiftName,
+  });
+
+  factory LeaderAttendanceLogItem.fromJson(Map<String, dynamic> json) {
+    final user = json['user'];
+    final name = user is Map ? (user['name'] as String? ?? '') : '';
+    return LeaderAttendanceLogItem(
+      id: json['id'] as String? ?? '',
+      userId: json['userId'] as String? ?? '',
+      date: json['date'] as String? ?? '',
+      status: json['status'] as String? ?? 'absent',
+      checkIn: json['checkIn'] as String?,
+      checkOut: json['checkOut'] as String?,
+      userName: name,
+      shiftName: json['shiftName'] as String?,
+    );
+  }
+}
+
+/// Pagination info for leader attendance report.
+class LeaderAttendancePagination {
+  final int page;
+  final int limit;
+  final int total;
+  final int totalPages;
+
+  LeaderAttendancePagination({
+    required this.page,
+    required this.limit,
+    required this.total,
+    required this.totalPages,
+  });
+
+  factory LeaderAttendancePagination.fromJson(Map<String, dynamic> json) {
+    return LeaderAttendancePagination(
+      page: (json['page'] as num?)?.toInt() ?? 1,
+      limit: (json['limit'] as num?)?.toInt() ?? 0,
+      total: (json['total'] as num?)?.toInt() ?? 0,
+      totalPages: (json['totalPages'] as num?)?.toInt() ?? 1,
+    );
+  }
+}
+
+/// Full leader attendance report (team monitoring).
+class LeaderAttendanceReport {
+  final LeaderAttendanceReportSummary summary;
+  final List<LeaderAttendanceLogItem> logs;
+  final LeaderAttendancePagination? pagination;
+
+  LeaderAttendanceReport({
+    required this.summary,
+    required this.logs,
+    this.pagination,
+  });
+
+  factory LeaderAttendanceReport.fromJson(Map<String, dynamic> json) {
+    final summaryJson = json['summary'];
+    final logsRaw = json['logs'];
+    final paginationJson = json['pagination'];
+
+    final summary = summaryJson is Map<String, dynamic>
+        ? LeaderAttendanceReportSummary.fromJson(summaryJson)
+        : LeaderAttendanceReportSummary(
+            present: 0,
+            absent: 0,
+            late: 0,
+            leave: 0,
+            pendingValidation: 0,
+          );
+
+    final logs = logsRaw is List
+        ? (logsRaw)
+            .where((e) => e is Map<String, dynamic>)
+            .map((e) => LeaderAttendanceLogItem.fromJson(e as Map<String, dynamic>))
+            .toList()
+        : <LeaderAttendanceLogItem>[];
+
+    final pagination = paginationJson is Map<String, dynamic>
+        ? LeaderAttendancePagination.fromJson(paginationJson)
+        : null;
+
+    return LeaderAttendanceReport(
+      summary: summary,
+      logs: logs,
+      pagination: pagination,
+    );
   }
 }

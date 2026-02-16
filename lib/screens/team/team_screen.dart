@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -6,6 +6,7 @@ import '../../models/shift_assignment_model.dart';
 import '../../models/shift_model.dart';
 import '../../models/team_model.dart';
 import '../../providers/auth_provider.dart';
+import 'team_tasks_screen.dart';
 import '../../services/team_service.dart';
 import '../../widgets/shimmer_loading.dart';
 
@@ -79,7 +80,8 @@ class _TeamScreenState extends State<TeamScreen> {
         _leaderTeams = leaderTeams;
         _myTeams = [];
 
-        if (_manageTeamId == null || !_leaderTeams.any((team) => team.id == _manageTeamId)) {
+        if (_manageTeamId == null ||
+            !_leaderTeams.any((team) => team.id == _manageTeamId)) {
           _manageTeamId = _leaderTeams.first.id;
         }
 
@@ -139,11 +141,17 @@ class _TeamScreenState extends State<TeamScreen> {
     }
   }
 
-  Future<Map<String, List<TeamMember>>> _fetchLeaderMembers(List<TeamSummary> teams) async {
-    final entries = await Future.wait(teams.map((team) async {
-      final members = await _teamService.getLeaderTeamMembers(teamId: team.id);
-      return MapEntry(team.id, members);
-    }));
+  Future<Map<String, List<TeamMember>>> _fetchLeaderMembers(
+    List<TeamSummary> teams,
+  ) async {
+    final entries = await Future.wait(
+      teams.map((team) async {
+        final members = await _teamService.getLeaderTeamMembers(
+          teamId: team.id,
+        );
+        return MapEntry(team.id, members);
+      }),
+    );
     return Map<String, List<TeamMember>>.fromEntries(entries);
   }
 
@@ -198,7 +206,7 @@ class _TeamScreenState extends State<TeamScreen> {
       },
       decoration: InputDecoration(
         prefixIcon: const Icon(Icons.search),
-        hintText: 'Cari nama, NIK, nomor HP, atau site',
+        hintText: 'Cari nama',
         filled: true,
         fillColor: Colors.white,
         border: OutlineInputBorder(
@@ -211,7 +219,10 @@ class _TeamScreenState extends State<TeamScreen> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 1.5),
+          borderSide: BorderSide(
+            color: Theme.of(context).primaryColor,
+            width: 1.5,
+          ),
         ),
       ),
     );
@@ -227,7 +238,7 @@ class _TeamScreenState extends State<TeamScreen> {
           const SizedBox(height: 8),
           _buildInfoRow('Team Leader', team.leaderName),
           const SizedBox(height: 8),
-          _buildInfoRow('Jumlah Anggota', team.memberCount.toString()),
+          _buildInfoRow('Total Anggota', team.memberCount.toString()),
         ],
       ),
     );
@@ -240,7 +251,7 @@ class _TeamScreenState extends State<TeamScreen> {
           flex: 2,
           child: Text(
             label,
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
           ),
         ),
         Expanded(
@@ -269,9 +280,13 @@ class _TeamScreenState extends State<TeamScreen> {
         endDate: _endDate,
       );
 
-      final members = _leaderMembersByTeam[_manageTeamId] ??
+      final members =
+          _leaderMembersByTeam[_manageTeamId] ??
           await _teamService.getLeaderTeamMembers(teamId: _manageTeamId!);
-      final memberIds = members.map((m) => m.id).where((id) => id.isNotEmpty).toSet();
+      final memberIds = members
+          .map((m) => m.id)
+          .where((id) => id.isNotEmpty)
+          .toSet();
       final filteredAssignments = assignments.where((assignment) {
         final ownerId = assignment.ownerId ?? assignment.owner?.id;
         if (ownerId == null) return false;
@@ -286,7 +301,8 @@ class _TeamScreenState extends State<TeamScreen> {
 
         final memberIds = members.map((m) => m.id).toSet();
         final shiftIds = shifts.map((s) => s.id).toSet();
-        if (_selectedMemberId == null || !memberIds.contains(_selectedMemberId)) {
+        if (_selectedMemberId == null ||
+            !memberIds.contains(_selectedMemberId)) {
           _selectedMemberId = members.isNotEmpty ? members.first.id : null;
         }
         if (_selectedShiftId == null || !shiftIds.contains(_selectedShiftId)) {
@@ -328,7 +344,9 @@ class _TeamScreenState extends State<TeamScreen> {
   }
 
   Future<void> _assignShift() async {
-    if (_manageTeamId == null || _selectedMemberId == null || _selectedShiftId == null) {
+    if (_manageTeamId == null ||
+        _selectedMemberId == null ||
+        _selectedShiftId == null) {
       return;
     }
     setState(() {
@@ -398,7 +416,9 @@ class _TeamScreenState extends State<TeamScreen> {
   TeamSummary? _currentTeam() {
     return _myTeams.firstWhere(
       (team) => team.id == _selectedTeamId,
-      orElse: () => _myTeams.isNotEmpty ? _myTeams.first : TeamSummary(id: '', name: '-', leaderName: '-', memberCount: 0),
+      orElse: () => _myTeams.isNotEmpty
+          ? _myTeams.first
+          : TeamSummary(id: '', name: '-', leaderName: '-', memberCount: 0),
     );
   }
 
@@ -430,6 +450,28 @@ class _TeamScreenState extends State<TeamScreen> {
     return dates;
   }
 
+  void _openTeamTasksScreen() {
+    final membersByTeam = <String, List<TeamMember>>{};
+    if (_isLeader) {
+      membersByTeam.addAll(_leaderMembersByTeam);
+    } else {
+      for (final team in _myTeams) {
+        membersByTeam[team.id] = team.members;
+      }
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TeamTasksScreen(
+          isLeader: _isLeader,
+          teams: _isLeader ? _leaderTeams : _myTeams,
+          membersByTeam: membersByTeam,
+          initialTeamId: _isLeader ? _manageTeamId : _selectedTeamId,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = Provider.of<AuthProvider>(context).user;
@@ -444,7 +486,12 @@ class _TeamScreenState extends State<TeamScreen> {
       body: RefreshIndicator(
         onRefresh: _loadTeamData,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: 16 + MediaQuery.of(context).padding.bottom,
+          ),
           children: [
             if (_isLoading)
               _buildSkeletonScreen()
@@ -455,9 +502,11 @@ class _TeamScreenState extends State<TeamScreen> {
               if (_isLeader) const SizedBox(height: 16),
               if (_isLeader) _buildLeaderTeamFilter(),
               if (_isLeader) const SizedBox(height: 12),
-              if (!_isLeader && _myTeams.length > 1) _buildEmployeeTeamSelector(),
+              if (!_isLeader && _myTeams.length > 1)
+                _buildEmployeeTeamSelector(),
               if (!_isLeader && _myTeams.length > 1) const SizedBox(height: 12),
-              if (!_isLeader && _myTeams.isNotEmpty) _buildTeamInfoCard(_currentTeam()!),
+              if (!_isLeader && _myTeams.isNotEmpty)
+                _buildTeamInfoCard(_currentTeam()!),
               if (!_isLeader && _myTeams.isNotEmpty) const SizedBox(height: 12),
               if (!_isLeader && _myTeams.isNotEmpty) _buildSearchBar(),
               if (!_isLeader && _myTeams.isNotEmpty) const SizedBox(height: 12),
@@ -465,6 +514,21 @@ class _TeamScreenState extends State<TeamScreen> {
                 _buildMemberList(currentUserId)
               else
                 _buildMemberTable(currentUserId),
+              if (_isLeader) const SizedBox(height: 12),
+              if (_isLeader)
+                _buildSectionCard(
+                  title: 'Tugas Team',
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _leaderTeams.isEmpty
+                          ? null
+                          : _openTeamTasksScreen,
+                      icon: const Icon(Icons.assignment_outlined),
+                      label: const Text('Kelola Tugas Anggota'),
+                    ),
+                  ),
+                ),
               if (_isLeader) const SizedBox(height: 20),
               if (_isLeader) _buildManageShiftSection(),
             ],
@@ -474,8 +538,15 @@ class _TeamScreenState extends State<TeamScreen> {
     );
   }
 
+  /// Total anggota dari backend (memberCount per team) agar sama dengan web app.
+  int _totalMembersFromBackend() {
+    return _leaderTeams
+        .where((t) => _selectedLeaderTeamIds.contains(t.id))
+        .fold<int>(0, (sum, t) => sum + t.memberCount);
+  }
+
   Widget _buildLeaderSummary() {
-    final totalMembers = _leaderMembersByTeam.values.fold<int>(0, (sum, members) => sum + members.length);
+    final totalMembers = _totalMembersFromBackend();
     return Row(
       children: [
         Expanded(
@@ -515,7 +586,9 @@ class _TeamScreenState extends State<TeamScreen> {
               onSelected: (selected) {
                 setState(() {
                   if (selected) {
-                    _selectedLeaderTeamIds = _leaderTeams.map((team) => team.id).toSet();
+                    _selectedLeaderTeamIds = _leaderTeams
+                        .map((team) => team.id)
+                        .toSet();
                   } else {
                     _selectedLeaderTeamIds = {};
                   }
@@ -526,7 +599,9 @@ class _TeamScreenState extends State<TeamScreen> {
             const SizedBox(width: 8),
             ..._leaderTeams.map((team) {
               final selected = _selectedLeaderTeamIds.contains(team.id);
-              final label = team.name.isNotEmpty ? team.name : '(Tanpa Nama Team)';
+              final label = team.name.isNotEmpty
+                  ? team.name
+                  : '(Tanpa Nama Team)';
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: FilterChip(
@@ -565,17 +640,23 @@ class _TeamScreenState extends State<TeamScreen> {
                   child: Text(
                     team.leaderName.isNotEmpty
                         ? '${team.leaderName} — ${team.name.isNotEmpty ? team.name : '(Tanpa Nama Team)'}'
-                        : (team.name.isNotEmpty ? team.name : '(Tanpa Nama Team)'),
+                        : (team.name.isNotEmpty
+                              ? team.name
+                              : '(Tanpa Nama Team)'),
                   ),
                 ),
               )
               .toList(),
           onChanged: (value) {
             if (value == null || value == _selectedTeamId) return;
-            final selected = _myTeams.firstWhere((team) => team.id == value, orElse: () => _myTeams.first);
+            final selected = _myTeams.firstWhere(
+              (team) => team.id == value,
+              orElse: () => _myTeams.first,
+            );
             setState(() {
               _selectedTeamId = value;
               _members = selected.members;
+              _memberPage = 0;
             });
           },
         ),
@@ -585,21 +666,25 @@ class _TeamScreenState extends State<TeamScreen> {
 
   Widget _buildMemberList(String? currentUserId) {
     final filtered = _filterMembers(_members);
-    final totalMembers = filtered.length;
+    final totalMembers = _totalMembersFromBackend();
     return _buildSectionCard(
       title: 'Anggota Team',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            totalMembers > 0 ? 'Total anggota: $totalMembers' : 'Belum ada anggota team',
-            style: TextStyle(color: Colors.grey[700]),
+            totalMembers > 0
+                ? 'Total anggota: $totalMembers'
+                : 'Belum ada anggota team',
+            style: TextStyle(color: Colors.grey.shade700),
           ),
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: totalMembers == 0 ? null : () => _showMembersModal(currentUserId),
+              onPressed: _members.isEmpty
+                  ? null
+                  : () => _showMembersModal(currentUserId),
               icon: const Icon(Icons.people_alt_outlined),
               label: const Text('Lihat Anggota'),
             ),
@@ -627,112 +712,126 @@ class _TeamScreenState extends State<TeamScreen> {
             final totalPages = _totalPages(filtered.length);
             if (page >= totalPages) page = 0;
             final pageItems = _paginateList(filtered, page);
+            final maxHeight = MediaQuery.of(context).size.height * 0.6;
 
             return Padding(
               padding: EdgeInsets.only(
                 left: 16,
                 right: 16,
                 top: 16,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                bottom:
+                    16 +
+                    MediaQuery.of(context).padding.bottom +
+                    MediaQuery.of(context).viewInsets.bottom,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Daftar Anggota',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    onChanged: (value) {
-                      setState(() {
-                        _searchQuery = value;
-                        _memberPage = 0;
-                      });
-                      setModalState(() {
-                        page = 0;
-                      });
-                    },
-                    decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.search),
-                      hintText: 'Cari nama, NIK, nomor HP, atau site',
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey[300]!),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey[300]!),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 1.5),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (filtered.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        'Tidak ada anggota sesuai pencarian',
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
-                    )
-                  else
-                    Flexible(
-                      child: ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: pageItems.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) => _buildMemberCard(
-                          pageItems[index],
-                          currentUserId: currentUserId,
-                        ),
-                      ),
-                    ),
-                  if (filtered.isNotEmpty) const SizedBox(height: 8),
-                  if (filtered.isNotEmpty)
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxHeight),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        TextButton(
-                          onPressed: page > 0
-                              ? () {
-                                  setModalState(() {
-                                    page -= 1;
-                                  });
-                                }
-                              : null,
-                          child: const Text('Sebelumnya'),
+                        const Expanded(
+                          child: Text(
+                            'Daftar Anggota',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
                         ),
-                        Text('Hal ${page + 1} / $totalPages'),
-                        TextButton(
-                          onPressed: page + 1 < totalPages
-                              ? () {
-                                  setModalState(() {
-                                    page += 1;
-                                  });
-                                }
-                              : null,
-                          child: const Text('Berikutnya'),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
                         ),
                       ],
                     ),
-                ],
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: controller,
+                      onChanged: (value) {
+                        setState(() {
+                          _searchQuery = value;
+                          _memberPage = 0;
+                        });
+                        setModalState(() {
+                          page = 0;
+                        });
+                      },
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.search),
+                        hintText: 'Cari nama',
+                        filled: true,
+                        fillColor: Colors.grey.shade100,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[300]!),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey[300]!),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: Theme.of(context).primaryColor,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (filtered.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Text(
+                          'Tidak ada anggota sesuai pencarian',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      )
+                    else
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: pageItems.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 8),
+                          itemBuilder: (context, index) => _buildMemberCard(
+                            pageItems[index],
+                            currentUserId: currentUserId,
+                          ),
+                        ),
+                      ),
+                    if (filtered.isNotEmpty) const SizedBox(height: 8),
+                    if (filtered.isNotEmpty)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          TextButton(
+                            onPressed: page > 0
+                                ? () {
+                                    setModalState(() {
+                                      page -= 1;
+                                    });
+                                  }
+                                : null,
+                            child: const Text('Sebelumnya'),
+                          ),
+                          Text('Hal ${page + 1} / $totalPages'),
+                          TextButton(
+                            onPressed: page + 1 < totalPages
+                                ? () {
+                                    setModalState(() {
+                                      page += 1;
+                                    });
+                                  }
+                                : null,
+                            child: const Text('Berikutnya'),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
               ),
             );
           },
@@ -747,7 +846,7 @@ class _TeamScreenState extends State<TeamScreen> {
         title: 'Susunan Team',
         child: Text(
           'Belum ada team yang terhubung dengan akun Anda',
-          style: TextStyle(color: Colors.grey[600]),
+          style: TextStyle(color: Colors.grey.shade600),
         ),
       );
     }
@@ -755,6 +854,12 @@ class _TeamScreenState extends State<TeamScreen> {
     final team = _currentTeam();
     final leaderName = team?.leaderName ?? 'Tanpa Leader';
     final filtered = _filterMembers(_members);
+    final totalPages = _totalPages(filtered.length);
+    final effectivePage = totalPages > 0
+        ? _memberPage.clamp(0, totalPages - 1)
+        : 0;
+    final pageItems = _paginateList(filtered, effectivePage);
+
     final leaderRow = <String, String>{
       'name': leaderName,
       'title': 'Leader',
@@ -777,11 +882,11 @@ class _TeamScreenState extends State<TeamScreen> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 'Tidak ada anggota sesuai pencarian',
-                style: TextStyle(color: Colors.grey[600]),
+                style: TextStyle(color: Colors.grey.shade600),
               ),
             )
           else
-            ...filtered.map((member) {
+            ...pageItems.map((member) {
               final isMe = member.id.isNotEmpty && member.id == currentUserId;
               return _buildTableRow(
                 name: member.name,
@@ -790,6 +895,38 @@ class _TeamScreenState extends State<TeamScreen> {
                 highlight: isMe,
               );
             }).toList(),
+          if (filtered.isNotEmpty && totalPages > 1) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: effectivePage > 0
+                      ? () {
+                          setState(() {
+                            _memberPage = effectivePage - 1;
+                          });
+                        }
+                      : null,
+                  child: const Text('Sebelumnya'),
+                ),
+                Text(
+                  'Hal ${effectivePage + 1} / $totalPages',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                ),
+                TextButton(
+                  onPressed: effectivePage + 1 < totalPages
+                      ? () {
+                          setState(() {
+                            _memberPage = effectivePage + 1;
+                          });
+                        }
+                      : null,
+                  child: const Text('Berikutnya'),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -799,15 +936,27 @@ class _TeamScreenState extends State<TeamScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.grey[100],
+        color: Colors.grey.shade100,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.grey[200]!),
       ),
       child: const Row(
         children: [
-          Expanded(flex: 3, child: Text('Nama', style: TextStyle(fontWeight: FontWeight.bold))),
-          Expanded(flex: 3, child: Text('Jabatan', style: TextStyle(fontWeight: FontWeight.bold))),
-          Expanded(flex: 2, child: Text('Role', style: TextStyle(fontWeight: FontWeight.bold))),
+          Expanded(
+            flex: 3,
+            child: Text('Nama', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              'Jabatan',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text('Role', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );
@@ -823,9 +972,11 @@ class _TeamScreenState extends State<TeamScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: highlight ? Colors.grey[50] : Colors.white,
+        color: highlight ? Colors.grey.shade50 : Colors.white,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: highlight ? Colors.grey[400]! : Colors.grey[200]!),
+        border: Border.all(
+          color: highlight ? Colors.grey.shade400 : Colors.grey.shade200,
+        ),
       ),
       child: Row(
         children: [
@@ -857,7 +1008,7 @@ class _TeamScreenState extends State<TeamScreen> {
           const SizedBox(height: 6),
           Text(
             'Leader hanya bisa memantau jadwal. Jika ada kesalahan, hubungi supervisor.',
-            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
           ),
         ],
         const SizedBox(height: 12),
@@ -875,10 +1026,12 @@ class _TeamScreenState extends State<TeamScreen> {
                         value: _manageTeamId,
                         isExpanded: true,
                         items: _leaderTeams
-                            .map((team) => DropdownMenuItem(
-                                  value: team.id,
-                                  child: Text(team.name),
-                                ))
+                            .map(
+                              (team) => DropdownMenuItem(
+                                value: team.id,
+                                child: Text(team.name),
+                              ),
+                            )
                             .toList(),
                         onChanged: (value) async {
                           if (value == null || value == _manageTeamId) return;
@@ -896,23 +1049,59 @@ class _TeamScreenState extends State<TeamScreen> {
               child: _isManageLoading
                   ? Column(
                       children: [
-                        ShimmerLoading(width: double.infinity, height: 44, borderRadius: BorderRadius.circular(10)),
+                        ShimmerLoading(
+                          width: double.infinity,
+                          height: 44,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         const SizedBox(height: 10),
-                        ShimmerLoading(width: double.infinity, height: 44, borderRadius: BorderRadius.circular(10)),
+                        ShimmerLoading(
+                          width: double.infinity,
+                          height: 44,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ],
                     )
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         OutlinedButton.icon(
-                          onPressed: _manageTeamId == null ? null : _showScheduleModal,
+                          onPressed: _manageTeamId == null
+                              ? null
+                              : _showScheduleModal,
                           icon: const Icon(Icons.calendar_month_outlined),
                           label: const Text('Lihat Jadwal'),
                         ),
                         const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: _manageTeamId == null
+                              ? null
+                              : () {
+                                  final teamName =
+                                      _leaderTeams
+                                          .where((t) => t.id == _manageTeamId)
+                                          .map((t) => t.name)
+                                          .firstOrNull ??
+                                      '';
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/team_monitoring_detail',
+                                    arguments: {
+                                      'teamId': _manageTeamId!,
+                                      'teamName': teamName,
+                                    },
+                                  );
+                                },
+                          icon: const Icon(Icons.people_outline),
+                          label: const Text('Monitoring Check-in'),
+                        ),
+                        const SizedBox(height: 10),
                         Text(
                           'Total jadwal di rentang ini: $totalAssignments',
-                          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ),
@@ -934,7 +1123,7 @@ class _TeamScreenState extends State<TeamScreen> {
                 ],
               ),
             );
-            
+
             final monitoringCard = _buildMonitoringSummaryCard(
               totalAssignments: totalAssignments,
               uniqueMembers: uniqueMembers,
@@ -966,7 +1155,9 @@ class _TeamScreenState extends State<TeamScreen> {
 
   bool _isBackupAssignment(ShiftAssignment assignment) {
     final note = assignment.notes?.toLowerCase() ?? '';
-    return note.contains('menggantikan') || note.contains('backup') || note.contains('bko');
+    return note.contains('menggantikan') ||
+        note.contains('backup') ||
+        note.contains('bko');
   }
 
   Widget _buildMonitoringSummaryCard({
@@ -985,7 +1176,7 @@ class _TeamScreenState extends State<TeamScreen> {
           const SizedBox(height: 6),
           Text(
             'Monitoring bersifat read-only.',
-            style: TextStyle(color: Colors.grey[600], fontSize: 11),
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
           ),
         ],
       ),
@@ -1002,7 +1193,11 @@ class _TeamScreenState extends State<TeamScreen> {
       final key = '${parsed.toIso8601String().split('T').first}|$shiftId';
       final existing = map[key];
       if (existing == null) {
-        map[key] = _AssignmentGroup(date: parsed, shift: shift, items: [assignment]);
+        map[key] = _AssignmentGroup(
+          date: parsed,
+          shift: shift,
+          items: [assignment],
+        );
       } else {
         existing.items.add(assignment);
       }
@@ -1047,7 +1242,10 @@ class _TeamScreenState extends State<TeamScreen> {
                       const Expanded(
                         child: Text(
                           'Tambah Shift',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
                       ),
                       IconButton(
@@ -1080,7 +1278,10 @@ class _TeamScreenState extends State<TeamScreen> {
                     },
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
                       decoration: BoxDecoration(
                         border: Border.all(color: Colors.grey[300]!),
                         borderRadius: BorderRadius.circular(10),
@@ -1094,10 +1295,12 @@ class _TeamScreenState extends State<TeamScreen> {
                   DropdownButtonFormField<String>(
                     value: _selectedMemberId,
                     items: _manageMembers
-                        .map((member) => DropdownMenuItem(
-                              value: member.id,
-                              child: Text(member.name),
-                            ))
+                        .map(
+                          (member) => DropdownMenuItem(
+                            value: member.id,
+                            child: Text(member.name),
+                          ),
+                        )
                         .toList(),
                     onChanged: (value) {
                       setState(() {
@@ -1105,7 +1308,9 @@ class _TeamScreenState extends State<TeamScreen> {
                       });
                       setModalState(() {});
                     },
-                    decoration: const InputDecoration(border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   const Text('Shift'),
@@ -1113,10 +1318,14 @@ class _TeamScreenState extends State<TeamScreen> {
                   DropdownButtonFormField<String>(
                     value: _selectedShiftId,
                     items: _shifts
-                        .map((shift) => DropdownMenuItem(
-                              value: shift.id,
-                              child: Text('${shift.name} (${shift.startTime}-${shift.endTime})'),
-                            ))
+                        .map(
+                          (shift) => DropdownMenuItem(
+                            value: shift.id,
+                            child: Text(
+                              '${shift.name} (${shift.startTime}-${shift.endTime})',
+                            ),
+                          ),
+                        )
                         .toList(),
                     onChanged: (value) {
                       setState(() {
@@ -1124,13 +1333,18 @@ class _TeamScreenState extends State<TeamScreen> {
                       });
                       setModalState(() {});
                     },
-                    decoration: const InputDecoration(border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: (_isManageLoading || _selectedMemberId == null || _selectedShiftId == null)
+                      onPressed:
+                          (_isManageLoading ||
+                              _selectedMemberId == null ||
+                              _selectedShiftId == null)
                           ? null
                           : () async {
                               Navigator.pop(context);
@@ -1168,64 +1382,235 @@ class _TeamScreenState extends State<TeamScreen> {
             final totalPages = _totalPages(groups.length);
             if (page >= totalPages) page = 0;
             final pageItems = _paginateList(groups, page);
+            final maxHeight = MediaQuery.of(context).size.height * 0.6;
 
             return Padding(
               padding: EdgeInsets.only(
                 left: 16,
                 right: 16,
                 top: 16,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                bottom:
+                    16 +
+                    MediaQuery.of(context).padding.bottom +
+                    MediaQuery.of(context).viewInsets.bottom,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxHeight),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Jadwal Shift Team',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${dateFormatter.format(_startDate)} - ${dateFormatter.format(_endDate)}',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (groups.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 20),
                         child: Text(
-                          'Jadwal Shift Team',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                          'Belum ada jadwal di rentang ini',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      )
+                    else
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: pageItems.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final group = pageItems[index];
+                            final shift = group.shift;
+                            final shiftName = shift?.name ?? 'Shift';
+                            final uniqueCount = group.items
+                                .map((item) => item.ownerId ?? item.owner?.id)
+                                .whereType<String>()
+                                .toSet()
+                                .length;
+                            return Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey[200]!),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          dateFormatter.format(group.date),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '$shiftName (${shift?.startTime ?? '-'}-${shift?.endTime ?? '-'})',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade700,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Total anggota: $uniqueCount',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade600,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => _showAssignmentDetailModal(
+                                      group,
+                                      memberMap,
+                                    ),
+                                    child: const Text('Detail'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
+                    if (groups.isNotEmpty) const SizedBox(height: 8),
+                    if (groups.isNotEmpty)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          TextButton(
+                            onPressed: page > 0
+                                ? () {
+                                    setModalState(() {
+                                      page -= 1;
+                                    });
+                                  }
+                                : null,
+                            child: const Text('Sebelumnya'),
+                          ),
+                          Text('Hal ${page + 1} / $totalPages'),
+                          TextButton(
+                            onPressed: page + 1 < totalPages
+                                ? () {
+                                    setModalState(() {
+                                      page += 1;
+                                    });
+                                  }
+                                : null,
+                            child: const Text('Berikutnya'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${dateFormatter.format(_startDate)} - ${dateFormatter.format(_endDate)}',
-                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                  ),
-                  const SizedBox(height: 12),
-                  if (groups.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 20),
-                      child: Text(
-                        'Belum ada jadwal di rentang ini',
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
-                    )
-                  else
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAssignmentDetailModal(
+    _AssignmentGroup group,
+    Map<String, TeamMember> memberMap,
+  ) {
+    int page = 0;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final totalPages = _totalPages(group.items.length);
+            if (page >= totalPages) page = 0;
+            final pageItems = _paginateList(group.items, page);
+            final maxHeight = MediaQuery.of(context).size.height * 0.6;
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom:
+                    16 +
+                    MediaQuery.of(context).padding.bottom +
+                    MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxHeight),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Detail Anggota',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     Flexible(
                       child: ListView.separated(
                         shrinkWrap: true,
                         itemCount: pageItems.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (context, index) {
-                          final group = pageItems[index];
-                          final shift = group.shift;
-                          final shiftName = shift?.name ?? 'Shift';
-                          final uniqueCount = group.items
-                              .map((item) => item.ownerId ?? item.owner?.id)
-                              .whereType<String>()
-                              .toSet()
-                              .length;
+                          final assignment = pageItems[index];
+                          final ownerId =
+                              assignment.ownerId ?? assignment.owner?.id;
+                          final member = ownerId != null
+                              ? memberMap[ownerId]
+                              : null;
+                          final owner = assignment.owner;
+                          final name = member?.name ?? owner?.name ?? 'Anggota';
+                          final siteName =
+                              member?.siteName ?? owner?.site ?? '-';
                           return Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.grey[50],
+                              color: Colors.grey.shade50,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(color: Colors.grey[200]!),
                             ),
@@ -1233,37 +1618,52 @@ class _TeamScreenState extends State<TeamScreen> {
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        dateFormatter.format(group.date),
-                                        style: const TextStyle(fontWeight: FontWeight.bold),
-                                      ),
+                                      Text(name),
                                       const SizedBox(height: 4),
                                       Text(
-                                        '$shiftName (${shift?.startTime ?? '-'}-${shift?.endTime ?? '-'})',
-                                        style: TextStyle(color: Colors.grey[700], fontSize: 12),
+                                        siteName,
+                                        style: TextStyle(
+                                          color: Colors.grey.shade600,
+                                          fontSize: 12,
+                                        ),
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Total anggota: $uniqueCount',
-                                        style: TextStyle(color: Colors.grey[600], fontSize: 11),
-                                      ),
+                                      if (assignment.notes != null &&
+                                          assignment.notes!
+                                              .trim()
+                                              .isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          assignment.notes!,
+                                          style: TextStyle(
+                                            color: Colors.grey.shade700,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 ),
-                                TextButton(
-                                  onPressed: () => _showAssignmentDetailModal(group, memberMap),
-                                  child: const Text('Detail'),
-                                ),
+                                if (!_leaderReadOnly)
+                                  IconButton(
+                                    onPressed: () async {
+                                      await _deleteAssignment(assignment);
+                                      setModalState(() {});
+                                    },
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      color: Colors.red,
+                                    ),
+                                  ),
                               ],
                             ),
                           );
                         },
                       ),
                     ),
-                  if (groups.isNotEmpty) const SizedBox(height: 8),
-                  if (groups.isNotEmpty)
+                    const SizedBox(height: 8),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -1290,138 +1690,8 @@ class _TeamScreenState extends State<TeamScreen> {
                         ),
                       ],
                     ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _showAssignmentDetailModal(_AssignmentGroup group, Map<String, TeamMember> memberMap) {
-    int page = 0;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final totalPages = _totalPages(group.items.length);
-            if (page >= totalPages) page = 0;
-            final pageItems = _paginateList(group.items, page);
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 16,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Detail Anggota',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Flexible(
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: pageItems.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          final assignment = pageItems[index];
-                          final ownerId = assignment.ownerId ?? assignment.owner?.id;
-                          final member = ownerId != null ? memberMap[ownerId] : null;
-                          final owner = assignment.owner;
-                          final name = member?.name ?? owner?.name ?? 'Anggota';
-                          final siteName = member?.siteName ?? owner?.site ?? '-';
-                          return Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[50],
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey[200]!),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                    Text(name),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      siteName,
-                                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                                    ),
-                                    if (assignment.notes != null && assignment.notes!.trim().isNotEmpty) ...[
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        assignment.notes!,
-                                        style: TextStyle(color: Colors.grey[700], fontSize: 11),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                              if (!_leaderReadOnly)
-                                IconButton(
-                                  onPressed: () async {
-                                    await _deleteAssignment(assignment);
-                                    setModalState(() {});
-                                  },
-                                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                                ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      TextButton(
-                        onPressed: page > 0
-                            ? () {
-                                setModalState(() {
-                                  page -= 1;
-                                });
-                              }
-                            : null,
-                        child: const Text('Sebelumnya'),
-                      ),
-                      Text('Hal ${page + 1} / $totalPages'),
-                      TextButton(
-                        onPressed: page + 1 < totalPages
-                            ? () {
-                                setModalState(() {
-                                  page += 1;
-                                });
-                              }
-                            : null,
-                        child: const Text('Berikutnya'),
-                      ),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
@@ -1436,7 +1706,7 @@ class _TeamScreenState extends State<TeamScreen> {
         title: 'Jadwal Shift Anggota',
         child: Text(
           'Belum ada jadwal di rentang ini',
-          style: TextStyle(color: Colors.grey[600]),
+          style: TextStyle(color: Colors.grey.shade600),
         ),
       );
     }
@@ -1454,7 +1724,7 @@ class _TeamScreenState extends State<TeamScreen> {
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.grey[50],
+              color: Colors.grey.shade50,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.grey[200]!),
             ),
@@ -1472,16 +1742,28 @@ class _TeamScreenState extends State<TeamScreen> {
                       const SizedBox(height: 4),
                       Text(
                         dateFormatter.format(DateTime.parse(assignment.date)),
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 12,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
-                          color: (shift?.color != null
-                                  ? Color(int.parse('FF${shift!.color!.replaceAll('#', '')}', radix: 16))
-                                  : Colors.blue)
-                              .withOpacity(0.15),
+                          color:
+                              (shift?.color != null
+                                      ? Color(
+                                          int.parse(
+                                            'FF${shift!.color!.replaceAll('#', '')}',
+                                            radix: 16,
+                                          ),
+                                        )
+                                      : Colors.blue)
+                                  .withOpacity(0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -1529,8 +1811,11 @@ class _TeamScreenState extends State<TeamScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  [member.title, member.siteName].where((item) => (item ?? '').isNotEmpty).join(' - '),
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  [
+                    member.title,
+                    member.siteName,
+                  ].where((item) => (item ?? '').isNotEmpty).join(' - '),
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                 ),
                 if (member.externalId != null &&
                     member.externalId!.isNotEmpty &&
@@ -1538,14 +1823,14 @@ class _TeamScreenState extends State<TeamScreen> {
                   const SizedBox(height: 2),
                   Text(
                     'NIK: ${member.externalId}',
-                    style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
                   ),
                 ],
                 if (member.teamName != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     member.teamName ?? '-',
-                    style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
                   ),
                 ],
               ],
@@ -1563,22 +1848,37 @@ class _TeamScreenState extends State<TeamScreen> {
         backgroundImage: NetworkImage(member.photoUrl!),
       );
     }
-    final initials = member.name
-        .split(' ')
-        .where((part) => part.isNotEmpty)
-        .map((part) => part[0])
-        .take(2)
-        .join()
-        .toUpperCase();
-    final bgColor = member.avatarColor != null && member.avatarColor!.isNotEmpty
-        ? Color(int.parse(member.avatarColor!.replaceAll('#', '0xFF')))
-        : Colors.blueGrey;
+    final nameStr = member.name;
+    final initials = nameStr.isEmpty
+        ? '?'
+        : nameStr
+              .split(' ')
+              .where((part) => part.isNotEmpty)
+              .map((part) => part[0])
+              .take(2)
+              .join()
+              .toUpperCase();
+    Color bgColor = Colors.blueGrey;
+    if (member.avatarColor != null && member.avatarColor!.isNotEmpty) {
+      try {
+        final hex = member.avatarColor!.replaceFirst('#', '').trim();
+        if (hex.isNotEmpty) {
+          final value = hex.length == 8 ? hex : 'FF$hex';
+          bgColor = Color(int.parse(value, radix: 16));
+        }
+      } catch (_) {
+        bgColor = Colors.blueGrey;
+      }
+    }
     return CircleAvatar(
       radius: 22,
       backgroundColor: bgColor,
       child: Text(
-        initials,
-        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        initials.isEmpty ? '?' : initials,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -1587,16 +1887,16 @@ class _TeamScreenState extends State<TeamScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.red[50],
+        color: Colors.red.shade50,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red[200]!),
+        border: Border.all(color: Colors.red.shade200),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             message ?? _error ?? 'Gagal memuat data team',
-            style: TextStyle(color: Colors.red[700]),
+            style: TextStyle(color: Colors.red.shade700),
           ),
           const SizedBox(height: 8),
           ElevatedButton(
@@ -1638,9 +1938,17 @@ class _TeamScreenState extends State<TeamScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ShimmerLoading(width: 160, height: 16, borderRadius: BorderRadius.circular(6)),
+          ShimmerLoading(
+            width: 160,
+            height: 16,
+            borderRadius: BorderRadius.circular(6),
+          ),
           const SizedBox(height: 12),
-          ShimmerLoading(width: double.infinity, height: height, borderRadius: BorderRadius.circular(12)),
+          ShimmerLoading(
+            width: double.infinity,
+            height: height,
+            borderRadius: BorderRadius.circular(12),
+          ),
         ],
       ),
     );
@@ -1691,7 +1999,11 @@ class _TeamScreenState extends State<TeamScreen> {
           const SizedBox(height: 8),
           Text(
             value,
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
           const SizedBox(height: 4),
           Text(

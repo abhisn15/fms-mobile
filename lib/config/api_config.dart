@@ -5,32 +5,32 @@ class ApiConfig {
   // Default values for development if .env is not loaded
   static String get baseUrl {
     final envUrl = dotenv.env['API_BASE_URL'];
-    
+
     if (envUrl != null && envUrl.isNotEmpty) {
       // Remove trailing slash if exists
       var cleanUrl = envUrl.trim().replaceAll(RegExp(r'/$'), '');
-      
+
       // Auto-fix common typos
       if (cleanUrl.contains('tpm-faciity.com')) {
         cleanUrl = cleanUrl.replaceAll('tpm-faciity.com', 'tpm-facility.com');
       }
-      
+
       // Validate URL format
       if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
         cleanUrl = 'https://$cleanUrl';
       }
-      
+
       return cleanUrl;
     }
-    
+
     // Default untuk Android Emulator
     return 'http://10.0.2.2:3001';
   }
-  
+
   static String get gcsBucketName {
     return dotenv.env['GCS_BUCKET_NAME'] ?? 'mms.mindotek.com';
   }
-  
+
   // API Endpoints
   static const String login = '/api/auth/login';
   static const String session = '/api/session';
@@ -39,7 +39,7 @@ class ApiConfig {
   static const String forgotPassword = '/api/auth/forgot-password';
   static const String verifyOTP = '/api/auth/verify-otp';
   static const String resetPassword = '/api/auth/reset-password';
-  
+
   // Employee endpoints
   static const String attendance = '/api/ess/attendance';
   static const String checkIn = '/api/ess/attendance/check-in';
@@ -61,20 +61,34 @@ class ApiConfig {
   // Team endpoints (employee)
   static const String teamMembers = '/api/ess/team/members';
 
+  // Incident Report (ESS)
+  static const String incidentReport = '/api/ess/incident-report';
+  static String incidentReportList({int page = 1, int limit = 20}) =>
+      '$incidentReport?page=$page&limit=$limit';
+
+  // Checkpoint endpoints (ESS)
+  static const String essCheckpoints = '/api/ess/activity/checkpoints';
+  static const String essCheckpointComplete =
+      '/api/ess/activity/checkpoint-complete';
+  static const String essSiteFlags = '/api/ess/site-flags';
+
   // Leader endpoints
   static const String leaderTeams = '/api/leader/teams';
   static const String leaderTeamMembers = '/api/leader/teams/members';
   static const String leaderShiftAssignments = '/api/leader/shifts/assignments';
   static const String leaderShiftMaster = '/api/leader/shifts/master';
-  
+  static const String leaderAttendance = '/api/leader/attendance';
+  static const String leaderTasks = '/api/leader/tasks';
+  static const String essTasks = '/api/ess/tasks';
+
   // Helper methods
   static String getFullUrl(String endpoint) {
     return '$baseUrl$endpoint';
   }
-  
+
   /// Convert relative URL to full URL
   /// Priority: Google Cloud Storage URL (storage.googleapis.com) > Full URL > Relative URL
-  /// 
+  ///
   /// Backend should return full GCS URL: https://storage.googleapis.com/bucket-name/path/to/file.webp
   /// If URL is relative (/uploads/...), it means backend is using local fallback
   /// In that case, we can try to convert to GCS URL if we know the path structure
@@ -82,7 +96,7 @@ class ApiConfig {
     if (url == null || url.isEmpty) {
       return '';
     }
-    
+
     // If already a full URL (including GCS), return as is
     // This is the preferred format - backend should return this
     if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -93,7 +107,7 @@ class ApiConfig {
       // Other full URLs (CDN, etc)
       return url;
     }
-    
+
     // If relative URL starting with /uploads/, it's local fallback
     // Use baseUrl directly (don't convert to GCS URL since file is stored locally)
     // Local: /uploads/activities/user/timestamp/file.webp
@@ -102,18 +116,18 @@ class ApiConfig {
       // For local storage, just prepend baseUrl
       return '$baseUrl$url';
     }
-    
+
     // If relative URL (starts with /) but not /uploads/, prepend baseUrl
     if (url.startsWith('/')) {
       return '$baseUrl$url';
     }
-    
+
     // If it's a GCS path without protocol (e.g., "checkins/user/timestamp/file.webp")
     // Construct full GCS URL
     if (url.contains('/') && !url.startsWith('uploads/')) {
       return 'https://storage.googleapis.com/$gcsBucketName/$url';
     }
-    
+
     // Otherwise, assume it's relative and prepend baseUrl with /
     return '$baseUrl/$url';
   }

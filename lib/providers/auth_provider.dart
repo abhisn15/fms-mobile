@@ -8,6 +8,7 @@ import '../services/background_tracking_service.dart';
 import '../services/tracking_state_service.dart';
 import '../services/version_service.dart';
 import '../services/persistent_notification_service.dart';
+import '../services/offline_storage_service.dart';
 import '../utils/error_handler.dart';
 
 class AuthProvider with ChangeNotifier {
@@ -170,6 +171,14 @@ class AuthProvider with ChangeNotifier {
     } catch (e) {
       debugPrint('[AuthProvider] ⚠️ Failed to clear check-in notification: $e');
       // Don't fail logout just because notification clear failed
+    }
+    
+    // Clear semua data offline (cache + pending) agar tidak tersisa untuk user lain / sesi berikutnya
+    try {
+      await OfflineStorageService().clearAll();
+      debugPrint('[AuthProvider] ✓ Offline & pending data cleared');
+    } catch (e) {
+      debugPrint('[AuthProvider] ⚠️ Failed to clear offline data: $e');
     }
     
     await _authService.logout();

@@ -336,7 +336,7 @@ class AttendanceService {
       return {
         'data': {
           'intervalSeconds': 60, // 1 minute default
-          'isEnabled': true,
+          'isEnabled': false,
         }
       };
     }

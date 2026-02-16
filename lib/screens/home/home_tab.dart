@@ -27,6 +27,9 @@ import '../../config/api_config.dart';
 import '../../utils/toast_helper.dart';
 import '../../services/team_service.dart';
 import '../../services/persistent_notification_service.dart';
+import '../../providers/checkpoint_provider.dart';
+import '../../models/checkpoint_model.dart';
+import '../activity/activity_form_screen.dart';
 import '../shifts/my_shift_screen.dart';
 import 'dart:io';
 import 'dart:async';
@@ -49,6 +52,8 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
   bool _gpsCheckInProgress = false;
   bool _gpsPrompted = false;
   bool _shouldRetryCheckInAfterGpsPrompt = false;
+  bool _checkInActionInProgress = false;
+  bool _checkOutActionInProgress = false;
   LatLng? _currentMapPosition;
   LatLng? _geofenceSitePosition;
   int? _geofenceRadiusMeters;
@@ -246,12 +251,15 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       });
       Provider.of<ShiftProvider>(context, listen: false).loadShifts();
       if (_shouldRetryCheckInAfterGpsPrompt) {
-        _shouldRetryCheckInAfterGpsPrompt = false;
-        Future.delayed(const Duration(milliseconds: 250), () {
-          if (!mounted) return;
-          debugPrint('[HomeTab] Retrying check-in after GPS prompt user interaction');
-          _handleCheckIn();
-        });
+        final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
+        if (attendanceProvider.activeAttendance == null && !_checkInActionInProgress) {
+          _shouldRetryCheckInAfterGpsPrompt = false;
+          Future.delayed(const Duration(milliseconds: 250), () {
+            if (!mounted) return;
+            debugPrint('[HomeTab] Retrying check-in after GPS prompt user interaction');
+            _handleCheckIn();
+          });
+        }
       }
     } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       // App di background - stop timer untuk hemat baterai
@@ -522,8 +530,21 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
 
   Future<bool> _ensureGpsActive({required bool promptSettings}) async {
     if (_gpsCheckInProgress) {
-      debugPrint('[HomeTab] GPS check already in progress');
-      return false;
+      debugPrint('[HomeTab] GPS check already in progress, waiting...');
+      var waitedMs = 0;
+      while (_gpsCheckInProgress && waitedMs < 4000) {
+        await Future.delayed(const Duration(milliseconds: 150));
+        waitedMs += 150;
+      }
+      if (_gpsCheckInProgress) {
+        if (mounted) {
+          ToastHelper.showWarning(
+            context,
+            'Sedang memeriksa GPS. Coba lagi sebentar.',
+          );
+        }
+        return false;
+      }
     }
     _gpsCheckInProgress = true;
 
@@ -580,6 +601,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
 
       debugPrint('[HomeTab] GPS is ready!');
       _loadCurrentLocationForMap();
+      _gpsPrompted = false;
       return true;
     } finally {
       _gpsCheckInProgress = false;
@@ -1492,290 +1514,295 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
 
 
   Future<void> _handleCheckIn() async {
+    if (_checkInActionInProgress) {
+      debugPrint('[HomeTab] Check-in already in progress, ignoring duplicate tap');
+      return;
+    }
+    _checkInActionInProgress = true;
     debugPrint('[HomeTab] Check-in button pressed - starting GPS check and camera');
 
-    final shiftProvider = Provider.of<ShiftProvider>(context, listen: false);
-    if (shiftProvider.shiftData == null) {
-      try {
-        await shiftProvider.loadShifts();
-      } catch (e) {
-        debugPrint('[HomeTab] Failed to load shifts before check-in: $e');
-      }
-    }
-
-    final isBlocked = shiftProvider.shiftData?.blocked ?? false;
-    if (isBlocked) {
-      final message = shiftProvider.shiftData?.blockedMessage ??
-          'Anda tidak dapat melakukan absensi hari ini.';
-      if (mounted) {
-        ToastHelper.showWarning(context, message);
-      }
-      return;
-    }
-
-    if (_isOffDay(shiftProvider.todayShifts)) {
-      if (mounted) {
-        ToastHelper.showWarning(context, _buildOffShiftMessage());
-      }
-      return;
-    }
-
-    // Check if user has active leave request
-    final requestProvider = Provider.of<RequestProvider>(context, listen: false);
-    final requests = requestProvider.requests;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    
-    // Find active leave request (status: approved atau berlangsung) that includes today
-    LeaveRequest? activeRequest;
-    for (final request in requests) {
-      final status = request.status.toLowerCase();
-      // Cek status approved atau berlangsung
-      if (status == 'approved' || status == 'berlangsung') {
+    try {
+      final shiftProvider = Provider.of<ShiftProvider>(context, listen: false);
+      if (shiftProvider.shiftData == null) {
         try {
-          final startDate = DateTime.parse(request.startDate);
-          final endDate = DateTime.parse(request.endDate);
-          final start = DateTime(startDate.year, startDate.month, startDate.day);
-          final end = DateTime(endDate.year, endDate.month, endDate.day);
-          
-          // Check if today is within the leave request date range
-          if (today.isAfter(start.subtract(const Duration(days: 1))) && 
-              today.isBefore(end.add(const Duration(days: 1)))) {
-            activeRequest = request;
-            break;
-          }
+          await shiftProvider.loadShifts();
         } catch (e) {
-          // Skip invalid date formats
-          continue;
+          debugPrint('[HomeTab] Failed to load shifts before check-in: $e');
         }
       }
-    }
-    
-    if (activeRequest != null) {
-      String getTypeLabel(String type) {
-        switch (type.toLowerCase()) {
-          case 'izin':
-            return 'Izin';
-          case 'cuti':
-            return 'Cuti';
-          case 'sakit':
-          case 'sick': // Handle both "sakit" and "sick" for compatibility
-            return 'Sakit';
-          default:
-            return type;
+
+      final isBlocked = shiftProvider.shiftData?.blocked ?? false;
+      if (isBlocked) {
+        final message = shiftProvider.shiftData?.blockedMessage ??
+            'Anda tidak dapat melakukan absensi hari ini.';
+        if (mounted) {
+          ToastHelper.showWarning(context, message);
+        }
+        return;
+      }
+
+      if (_isOffDay(shiftProvider.todayShifts)) {
+        if (mounted) {
+          ToastHelper.showWarning(context, _buildOffShiftMessage());
+        }
+        return;
+      }
+
+      // Check if user has active leave request
+      final requestProvider = Provider.of<RequestProvider>(context, listen: false);
+      final requests = requestProvider.requests;
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+
+      LeaveRequest? activeRequest;
+      for (final request in requests) {
+        final status = request.status.toLowerCase();
+        if (status == 'approved' || status == 'berlangsung') {
+          try {
+            final startDate = DateTime.parse(request.startDate);
+            final endDate = DateTime.parse(request.endDate);
+            final start = DateTime(startDate.year, startDate.month, startDate.day);
+            final end = DateTime(endDate.year, endDate.month, endDate.day);
+
+            if (today.isAfter(start.subtract(const Duration(days: 1))) &&
+                today.isBefore(end.add(const Duration(days: 1)))) {
+              activeRequest = request;
+              break;
+            }
+          } catch (_) {
+            continue;
+          }
         }
       }
-      
-      if (mounted) {
-        ToastHelper.showWarning(
-          context,
-          'Anda sedang dalam ${getTypeLabel(activeRequest.type).toLowerCase()} yang berlangsung. Tidak dapat melakukan check-in saat ini.',
-        );
-      }
-      return;
-    }
 
-    // Start GPS check in background (don't wait for it)
-    _ensureGpsActive(promptSettings: true).then((gpsReady) {
-      if (!gpsReady) {
-        debugPrint('[HomeTab] GPS not ready, will prompt user');
-        _shouldRetryCheckInAfterGpsPrompt = true;
-      } else {
-        debugPrint('[HomeTab] GPS ready for check-in');
-        _shouldRetryCheckInAfterGpsPrompt = false;
-      }
-    });
-    
-    final attendanceProvider =
-        Provider.of<AttendanceProvider>(context, listen: false);
-    if (attendanceProvider.activeAttendance != null) {
-      if (mounted) {
-        ToastHelper.showWarning(
-          context,
-          'Masih ada check-in aktif. Silakan check-out terlebih dahulu.',
-        );
-      }
-      return;
-    }
+      if (activeRequest != null) {
+        String getTypeLabel(String type) {
+          switch (type.toLowerCase()) {
+            case 'izin':
+              return 'Izin';
+            case 'cuti':
+              return 'Cuti';
+            case 'sakit':
+            case 'sick':
+              return 'Sakit';
+            default:
+              return type;
+          }
+        }
 
-    var todayShifts = shiftProvider.todayShifts;
-    var selectedShift =
-        _selectShiftForCheckIn(todayShifts, attendanceProvider.todayRecords);
-
-    if (todayShifts.isNotEmpty && selectedShift == null) {
-      try {
-        await shiftProvider.loadShifts();
-      } catch (e) {
-        debugPrint('[HomeTab] Failed to refresh shifts before check-in: $e');
-      }
-      todayShifts = shiftProvider.todayShifts;
-      selectedShift =
-          _selectShiftForCheckIn(todayShifts, attendanceProvider.todayRecords);
-    }
-
-    if (todayShifts.isEmpty) {
-      try {
-        await shiftProvider.loadShifts();
-      } catch (e) {
-        debugPrint('[HomeTab] Failed to refresh shifts (empty) before check-in: $e');
-      }
-      todayShifts = shiftProvider.todayShifts;
-      selectedShift =
-          _selectShiftForCheckIn(todayShifts, attendanceProvider.todayRecords);
-    }
-
-    if (todayShifts.isNotEmpty && selectedShift == null) {
-      if (mounted) {
-        ToastHelper.showWarning(
-          context,
-          _isOffDay(todayShifts)
-              ? _buildOffShiftMessage()
-              : 'Semua shift hari ini sudah selesai.',
-        );
-      }
-      return;
-    }
-
-    if (todayShifts.isEmpty) {
-      final hasShiftlessRecord = attendanceProvider.todayRecords.any(
-        (record) => (record.shiftId == null || record.shiftId!.isEmpty),
-      );
-      if (hasShiftlessRecord) {
         if (mounted) {
           ToastHelper.showWarning(
             context,
-            'Absensi tanpa shift hanya bisa sekali per hari.',
+            'Anda sedang dalam ${getTypeLabel(activeRequest.type).toLowerCase()} yang berlangsung. Tidak dapat melakukan check-in saat ini.',
           );
         }
         return;
       }
-    }
 
-    if (selectedShift != null) {
-      debugPrint('[HomeTab] Using selected shift: ${selectedShift.name} (${selectedShift.id})');
-    } else {
-      debugPrint('[HomeTab] No shift assigned, will check-in without shift');
-    }
+      final gpsReady = await _ensureGpsActive(promptSettings: true);
+      if (!gpsReady) {
+        debugPrint('[HomeTab] GPS not ready, will retry after prompt');
+        _shouldRetryCheckInAfterGpsPrompt = _gpsPrompted;
+        return;
+      }
+      debugPrint('[HomeTab] GPS ready for check-in');
+      _shouldRetryCheckInAfterGpsPrompt = false;
 
-    String? checkInReason;
-    if (selectedShift != null && mounted) {
-      final expectedStart = _calculateExpectedShiftStart(selectedShift);
-      if (expectedStart != null) {
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        final toleranceMinutes = authProvider.user?.site?.lateToleranceMinutes ?? 0;
-        final now = DateTime.now();
-        final diffMinutes = now.difference(expectedStart).inMinutes;
-        if (diffMinutes > toleranceMinutes) {
-          final absMinutes = diffMinutes;
-          final hours = absMinutes ~/ 60;
-          final minutes = absMinutes % 60;
-          final durationLabel = hours == 0
-              ? '$minutes menit'
-              : minutes == 0
-                  ? '$hours jam'
-                  : '$hours jam $minutes menit';
-          final expectedLabel = _formatTimeHHmm(expectedStart);
-          final toleranceLabel = toleranceMinutes > 0
-              ? 'melewati toleransi $toleranceMinutes menit'
-              : 'melewati jadwal';
-          final reason = await _showCheckInReasonDialog(
-            context: context,
-            title: 'Check-in Terlambat',
-            message:
-                'Check-in $toleranceLabel dari jadwal ($expectedLabel). Selisih $durationLabel. Mohon isi keterangan.',
+      final attendanceProvider = Provider.of<AttendanceProvider>(context, listen: false);
+      if (attendanceProvider.activeAttendance != null) {
+        if (mounted) {
+          ToastHelper.showWarning(
+            context,
+            'Masih ada check-in aktif. Silakan check-out terlebih dahulu.',
           );
-          if (reason == null) {
-            return;
-          }
-          checkInReason = reason;
         }
+        return;
       }
-    }
 
-    debugPrint('[HomeTab] Opening camera for check-in selfie...');
+      var todayShifts = shiftProvider.todayShifts;
+      var selectedShift =
+          _selectShiftForCheckIn(todayShifts, attendanceProvider.todayRecords);
 
-    // Buka kamera untuk selfie (hanya kamera, tidak boleh galeri)
-    final photo = await Navigator.push<File>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const CameraScreen(
-          title: 'Ambil Selfie untuk Check-In',
-          allowGallery: false, // Check-in hanya boleh kamera
-          preferLowResolution: true,
-        ),
-      ),
-    );
+      if (todayShifts.isNotEmpty && selectedShift == null) {
+        try {
+          await shiftProvider.loadShifts();
+        } catch (e) {
+          debugPrint('[HomeTab] Failed to refresh shifts before check-in: $e');
+        }
+        todayShifts = shiftProvider.todayShifts;
+        selectedShift =
+            _selectShiftForCheckIn(todayShifts, attendanceProvider.todayRecords);
+      }
 
-    if (photo != null && mounted) {
-      debugPrint('[HomeTab] Photo captured: ${photo.path}');
-      debugPrint('[HomeTab] Submitting check-in...');
-      try {
-        final success = await attendanceProvider.checkIn(
-          photo: photo,
-          shiftId: selectedShift?.id, // Opsional - bisa null jika tidak ada shift
-          checkInReason: checkInReason,
+      if (todayShifts.isEmpty) {
+        try {
+          await shiftProvider.loadShifts();
+        } catch (e) {
+          debugPrint('[HomeTab] Failed to refresh shifts (empty) before check-in: $e');
+        }
+        todayShifts = shiftProvider.todayShifts;
+        selectedShift =
+            _selectShiftForCheckIn(todayShifts, attendanceProvider.todayRecords);
+      }
+
+      if (todayShifts.isNotEmpty && selectedShift == null) {
+        if (mounted) {
+          ToastHelper.showWarning(
+            context,
+            _isOffDay(todayShifts)
+                ? _buildOffShiftMessage()
+                : 'Semua shift hari ini sudah selesai.',
+          );
+        }
+        return;
+      }
+
+      if (todayShifts.isEmpty) {
+        final hasShiftlessRecord = attendanceProvider.todayRecords.any(
+          (record) => (record.shiftId == null || record.shiftId!.isEmpty),
         );
-
-        if (mounted) {
-          debugPrint('[HomeTab] Check-in result: $success');
-          if (success) {
-            // loadAttendance sudah dipanggil di checkIn() method, tidak perlu dipanggil lagi
-            // Tunggu sebentar untuk memastikan loading state sudah di-reset
-            await Future.delayed(const Duration(milliseconds: 100));
-            
-            if (mounted) {
-              ToastHelper.showSuccess(context, 'Check-in berhasil!');
-              debugPrint('[HomeTab] Starting duration timer...');
-              // Parse and start duration timer
-              final today = attendanceProvider.todayAttendance;
-              final shiftProvider = Provider.of<ShiftProvider>(context, listen: false);
-              _checkInDateTime = _parseCheckInDateTime(today);
-              _startDurationTimer();
-              if (today != null) {
-                _syncPersistentNotification(
-                  today,
-                  shiftProvider,
-                  fallbackShift: selectedShift,
-                );
-              }
-              if (mounted) {
-                setState(() => _selectedShift = null);
-              }
-            }
-          } else {
-            if (mounted) {
-              ToastHelper.showError(context, attendanceProvider.error ?? 'Check-in gagal');
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint('[HomeTab] Error during check-in: $e');
-        if (mounted) {
-          // Check if it's a permission error
-          if (e.toString().contains('izin') || e.toString().contains('permission') ||
-              e.toString().contains('lokasi') || e.toString().contains('Location')) {
-            debugPrint('[HomeTab] 🎯 Permission error detected, showing guidance dialog');
-            await PermissionGuidanceDialog.show(
+        if (hasShiftlessRecord) {
+          if (mounted) {
+            ToastHelper.showWarning(
               context,
-              title: 'Izin Lokasi Diperlukan',
-              message: e.toString().replaceAll('Exception: ', ''),
+              'Absensi tanpa shift hanya bisa sekali per hari.',
             );
-          } else {
-            ToastHelper.showError(context, 'Terjadi kesalahan saat check-in: $e');
+          }
+          return;
+        }
+      }
+
+      if (selectedShift != null) {
+        debugPrint('[HomeTab] Using selected shift: ${selectedShift.name} (${selectedShift.id})');
+      } else {
+        debugPrint('[HomeTab] No shift assigned, will check-in without shift');
+      }
+
+      String? checkInReason;
+      if (selectedShift != null && mounted) {
+        final expectedStart = _calculateExpectedShiftStart(selectedShift);
+        if (expectedStart != null) {
+          final authProvider = Provider.of<AuthProvider>(context, listen: false);
+          final toleranceMinutes = authProvider.user?.site?.lateToleranceMinutes ?? 0;
+          final now = DateTime.now();
+          final diffMinutes = now.difference(expectedStart).inMinutes;
+          if (diffMinutes > toleranceMinutes) {
+            final absMinutes = diffMinutes;
+            final hours = absMinutes ~/ 60;
+            final minutes = absMinutes % 60;
+            final durationLabel = hours == 0
+                ? '$minutes menit'
+                : minutes == 0
+                    ? '$hours jam'
+                    : '$hours jam $minutes menit';
+            final expectedLabel = _formatTimeHHmm(expectedStart);
+            final toleranceLabel = toleranceMinutes > 0
+                ? 'melewati toleransi $toleranceMinutes menit'
+                : 'melewati jadwal';
+            final reason = await _showCheckInReasonDialog(
+              context: context,
+              title: 'Check-in Terlambat',
+              message:
+                  'Check-in $toleranceLabel dari jadwal ($expectedLabel). Selisih $durationLabel. Mohon isi keterangan.',
+            );
+            if (reason == null) {
+              return;
+            }
+            checkInReason = reason;
           }
         }
       }
-    } else {
-      debugPrint('[HomeTab] Photo capture cancelled or widget unmounted');
+
+      debugPrint('[HomeTab] Opening camera for check-in selfie...');
+
+      final photo = await Navigator.push<File>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const CameraScreen(
+            title: 'Ambil Selfie untuk Check-In',
+            allowGallery: false,
+            preferLowResolution: true,
+          ),
+        ),
+      );
+
+      if (photo != null && mounted) {
+        debugPrint('[HomeTab] Photo captured: ${photo.path}');
+        debugPrint('[HomeTab] Submitting check-in...');
+        try {
+          final success = await attendanceProvider.checkIn(
+            photo: photo,
+            shiftId: selectedShift?.id,
+            checkInReason: checkInReason,
+          );
+
+          if (mounted) {
+            debugPrint('[HomeTab] Check-in result: $success');
+            if (success) {
+              await Future.delayed(const Duration(milliseconds: 100));
+
+              if (mounted) {
+                ToastHelper.showSuccess(context, 'Check-in berhasil!');
+                debugPrint('[HomeTab] Starting duration timer...');
+                final today = attendanceProvider.todayAttendance;
+                final shiftProvider = Provider.of<ShiftProvider>(context, listen: false);
+                _checkInDateTime = _parseCheckInDateTime(today);
+                _startDurationTimer();
+                if (today != null) {
+                  _syncPersistentNotification(
+                    today,
+                    shiftProvider,
+                    fallbackShift: selectedShift,
+                  );
+                }
+                if (mounted) {
+                  setState(() => _selectedShift = null);
+                }
+              }
+            } else {
+              if (mounted) {
+                ToastHelper.showError(context, attendanceProvider.error ?? 'Check-in gagal');
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('[HomeTab] Error during check-in: $e');
+          if (mounted) {
+            if (e.toString().contains('izin') ||
+                e.toString().contains('permission') ||
+                e.toString().contains('lokasi') ||
+                e.toString().contains('Location')) {
+              debugPrint('[HomeTab] Permission error detected, showing guidance dialog');
+              await PermissionGuidanceDialog.show(
+                context,
+                title: 'Izin Lokasi Diperlukan',
+                message: e.toString().replaceAll('Exception: ', ''),
+              );
+            } else {
+              ToastHelper.showError(context, 'Terjadi kesalahan saat check-in: $e');
+            }
+          }
+        }
+      } else {
+        debugPrint('[HomeTab] Photo capture cancelled or widget unmounted');
+      }
+    } finally {
+      _checkInActionInProgress = false;
     }
   }
 
   Future<void> _handleCheckOut() async {
-    debugPrint('[HomeTab] Check-out button pressed');
-    final gpsReady = await _ensureGpsActive(promptSettings: true);
-    if (!gpsReady) {
+    if (_checkOutActionInProgress) {
+      debugPrint('[HomeTab] Check-out already in progress, ignoring duplicate tap');
       return;
     }
+    _checkOutActionInProgress = true;
+    debugPrint('[HomeTab] Check-out button pressed');
+    try {
+      final gpsReady = await _ensureGpsActive(promptSettings: true);
+      if (!gpsReady) {
+        return;
+      }
     final attendanceProvider =
         Provider.of<AttendanceProvider>(context, listen: false);
     final today = attendanceProvider.todayAttendance;
@@ -1800,43 +1827,9 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
       }
     }
 
+    // Checkout lebih awal dibiarkan saja (tidak wajib keterangan).
+    // Catatan khusus hanya untuk checkout telat (> 2 jam dari jam shift), ditambah otomatis di backend.
     String? earlyCheckoutReason;
-    final shiftProvider = Provider.of<ShiftProvider>(context, listen: false);
-    if (shiftProvider.shiftData == null) {
-      try {
-        await shiftProvider.loadShifts();
-      } catch (_) {}
-    }
-    final resolvedShift = today != null ? _resolveShiftForNotification(today, shiftProvider) : null;
-    final expectedEnd = _calculateExpectedShiftEnd(today, resolvedShift);
-    if (expectedEnd != null && mounted) {
-      final now = DateTime.now();
-      final diffMinutes = now.difference(expectedEnd).inMinutes;
-      if (diffMinutes < 0 || diffMinutes > 60) {
-        final absMinutes = diffMinutes.abs();
-        final hours = absMinutes ~/ 60;
-        final minutes = absMinutes % 60;
-        final durationLabel = hours == 0
-            ? '$minutes menit'
-            : minutes == 0
-                ? '$hours jam'
-                : '$hours jam $minutes menit';
-        final expectedLabel = _formatTimeHHmm(expectedEnd);
-        final requirementLabel = absMinutes >= 120
-            ? 'Wajib isi keterangan.'
-            : 'Mohon isi keterangan.';
-        final reason = await _showCheckoutReasonDialog(
-          context: context,
-          title: 'Checkout tidak sesuai jadwal',
-          message:
-              'Waktu checkout tidak sesuai jadwal selesai ($expectedLabel). Selisih $durationLabel. $requirementLabel',
-        );
-        if (reason == null) {
-          return;
-        }
-        earlyCheckoutReason = reason;
-      }
-    }
 
     debugPrint('[HomeTab] Opening camera for check-out selfie...');
     final wasTracking = await attendanceProvider.pauseRealtimeTracking();
@@ -1918,6 +1911,9 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
         await attendanceProvider.syncRealtimeTracking();
       }
     }
+    } finally {
+      _checkOutActionInProgress = false;
+    }
   }
 
   void _startDurationTimer() {
@@ -1985,10 +1981,76 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
     });
   }
 
+  /// Skeleton untuk kartu Kehadiran Hari Ini (saat loading)
+  Widget _buildAttendanceCardSkeleton(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header skeleton
+          ShimmerLoading(
+            width: double.infinity,
+            height: 68,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Waktu Bekerja skeleton
+                ShimmerLoading(
+                  width: double.infinity,
+                  height: 72,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                const SizedBox(height: 12),
+                // Task card placeholder
+                ShimmerLoading(
+                  width: double.infinity,
+                  height: 52,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                const SizedBox(height: 12),
+                // Button skeleton
+                ShimmerLoading(
+                  width: double.infinity,
+                  height: 48,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTodaysAttendanceCard(BuildContext context) {
     return Consumer<AttendanceProvider>(
       builder: (context, attendanceProvider, _) {
         final today = attendanceProvider.todayAttendance;
+
+        // Tampilkan skeleton saat loading dan belum ada data hari ini
+        if (attendanceProvider.isLoading && today == null) {
+          return _buildAttendanceCardSkeleton(context);
+        }
+
         final hasCheckedIn = today?.checkIn != null;
         final hasCheckedOut = today?.checkOut != null;
 
@@ -2013,25 +2075,27 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
           _checkAndStartTimer(attendanceProvider);
         });
         
+        // Kartu kehadiran lebar penuh area konten, header ringkas
         return Container(
           margin: const EdgeInsets.only(bottom: 20),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 15,
-                offset: const Offset(0, 5),
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header dengan gradient
+              // Header ringkas: tanggal + judul satu blok seamless
               Container(
-                padding: const EdgeInsets.all(18),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
@@ -2042,72 +2106,62 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                     ],
                   ),
                   borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
                   ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    // Tanggal di paling atas
-                    Text(
-                      DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(DateTime.now()),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                    Icon(Icons.calendar_today_rounded, color: Colors.white.withOpacity(0.95), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            DateFormat('EEE, dd MMM yyyy', 'id_ID').format(DateTime.now()),
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.95),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Kehadiran Hari Ini',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    // Title dengan icon
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(
-                            Icons.access_time,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Text(
-                          "Kehadiran Hari Ini",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
                     ),
                   ],
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Working Time Section
                     Container(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       decoration: BoxDecoration(
                         color: Colors.blue[50],
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: Colors.blue[100]!,
-                          width: 1.5,
+                          width: 1,
                         ),
                       ),
                       child: Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(10),
+                            padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
                               color: Colors.blue[100],
                               borderRadius: BorderRadius.circular(10),
@@ -2115,10 +2169,10 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                             child: Icon(
                               Icons.timer_outlined,
                               color: Colors.blue[700],
-                              size: 24,
+                              size: 22,
                             ),
                           ),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2170,7 +2224,7 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                         ],
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     // Location Section - Check-In and Check-Out
                     if (hasCheckedIn || hasCheckedOut) ...[
                       // Check-In Location
@@ -2288,6 +2342,9 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
                       _buildGeofenceHint(context, forCheckOut: true),
                       const SizedBox(height: 12),
                     ],
+                    // Tugas Hari Ini (di atas tombol check-in)
+                    const _CheckpointProgressCard(),
+                    const SizedBox(height: 12),
                     // Check-In/Check-Out Button
                     if (offDayPendingCheckout)
                       _buildDisabledCheckInButton(
@@ -2628,21 +2685,25 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Shift Saya',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: Colors.grey.shade800,
+                ),
               ),
               const SizedBox(height: 12),
               if (_isOffDay(shiftProvider.todayShifts)) ...[
@@ -3673,34 +3734,31 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
           await Provider.of<ShiftProvider>(context, listen: false).loadShifts();
           await Provider.of<RequestProvider>(context, listen: false).loadRequests();
         },
-        child: SingleChildScrollView(
+        child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Password Setup Banner (jika user belum punya password atau masih pakai password default)
-              Consumer<AuthProvider>(
-                builder: (context, authProvider, _) {
-                  final user = authProvider.user;
-                  // User perlu ganti password jika:
-                  // 1. Belum punya password di database (hasPassword === false)
-                  // 2. Masih menggunakan password default (needsPasswordChange === true)
-                  final needsPasswordSetup = (user?.hasPassword == false) || (user?.needsPasswordChange == true);
-                  if (needsPasswordSetup) {
-                    return const PasswordSetupBanner();
-                  }
-                  return const SizedBox.shrink();
-                },
-              ),
-              // Leave Request Banner (jika ada izin yang berlangsung)
-              const LeaveRequestBanner(),
-              // Permission Status Card (check location & notification permissions)
-              const PermissionStatusCard(),
-              // Today's Attendance Card
-              _buildTodaysAttendanceCard(context),
-              const SizedBox(height: 12),
-              _buildShiftQuickActions(context),
+          children: [
+            // Password Setup Banner (jika user belum punya password atau masih pakai password default)
+            Consumer<AuthProvider>(
+              builder: (context, authProvider, _) {
+                final user = authProvider.user;
+                // User perlu ganti password jika:
+                // 1. Belum punya password di database (hasPassword === false)
+                // 2. Masih menggunakan password default (needsPasswordChange === true)
+                final needsPasswordSetup = (user?.hasPassword == false) || (user?.needsPasswordChange == true);
+                if (needsPasswordSetup) {
+                  return const PasswordSetupBanner();
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+            // Leave Request Banner (jika ada izin yang berlangsung)
+            const LeaveRequestBanner(),
+            // Permission Status Card (check location & notification permissions)
+            const PermissionStatusCard(),
+            // Today's Attendance Card (check-in/check-out diutamakan, task card di dalamnya di atas tombol)
+            _buildTodaysAttendanceCard(context),
+            _buildShiftQuickActions(context),
               // Error Banner (jika ada error dari provider)
               Consumer<AttendanceProvider>(
                 builder: (context, attendanceProvider, _) {
@@ -3736,6 +3794,51 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
               // Total Attendance (Days) Section
               Consumer<AttendanceProvider>(
                 builder: (context, attendanceProvider, _) {
+                  if (attendanceProvider.isLoading) {
+                    return AnimatedCard(
+                      delay: 100,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ShimmerLoading(width: 180, height: 20, borderRadius: BorderRadius.circular(6)),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: LayoutBuilder(
+                                  builder: (context, c) => ShimmerLoading(
+                                    width: c.maxWidth,
+                                    height: 72,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: LayoutBuilder(
+                                  builder: (context, c) => ShimmerLoading(
+                                    width: c.maxWidth,
+                                    height: 72,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: LayoutBuilder(
+                                  builder: (context, c) => ShimmerLoading(
+                                    width: c.maxWidth,
+                                    height: 72,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  }
                   final recent = attendanceProvider.recentAttendance;
                   final stats = _calculateAttendanceStats(recent);
                   
@@ -4144,8 +4247,133 @@ class _HomeTabState extends State<HomeTab> with TickerProviderStateMixin, Widget
             ],
           ),
         ),
-      ),
     );
   }
 
+}
+
+// ============================================================
+// Checkpoint Progress Card (tugas hari ini) - uses CheckpointProvider
+// ============================================================
+
+class _CheckpointProgressCard extends StatefulWidget {
+  const _CheckpointProgressCard();
+
+  @override
+  State<_CheckpointProgressCard> createState() => _CheckpointProgressCardState();
+}
+
+class _CheckpointProgressCardState extends State<_CheckpointProgressCard> {
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fetch checkpoint data melalui provider (akan di-cache)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<CheckpointProvider>(context, listen: false).loadCheckpoint();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<CheckpointProvider>(
+      builder: (context, cp, _) {
+        if (cp.loading || !cp.hasCheckpoint) return const SizedBox.shrink();
+
+        final completed = cp.completedCount;
+        final total = cp.totalCount;
+        final allDone = completed == total && total > 0;
+        final nextTask = cp.nextTaskName;
+
+        // Kotak kecil full width, klik seluruh komponen, panah > di kanan
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ActivityFormScreen()),
+              ).then((_) {
+                Provider.of<CheckpointProvider>(context, listen: false).loadCheckpoint(force: true);
+              });
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+                border: Border.all(
+                  color: allDone ? Colors.green.shade100 : Colors.blue.shade100,
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    allDone ? Icons.check_circle_rounded : Icons.checklist_rounded,
+                    color: allDone ? Colors.green.shade600 : Colors.blue.shade600,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Tugas Hari Ini',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            color: Colors.grey.shade800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          allDone
+                              ? 'Semua selesai'
+                              : (nextTask != null ? 'Selanjutnya: $nextTask' : '${cp.template?.name ?? 'Checkpoint'} · $completed/$total'),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: allDone ? Colors.green.shade50 : Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$completed/$total',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: allDone ? Colors.green.shade700 : Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 22),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
