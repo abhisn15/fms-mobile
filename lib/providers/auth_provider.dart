@@ -20,7 +20,8 @@ class AuthProvider with ChangeNotifier {
   bool _isRefreshingSession = false;
 
   // Version check callback
-  Function(bool updateAvailable, bool updateRequired, VersionData? versionData)? _onVersionCheck;
+  Function(bool updateAvailable, bool updateRequired, VersionData? versionData)?
+  _onVersionCheck;
 
   User? get user => _user;
   bool get isLoading => _isLoading;
@@ -28,7 +29,14 @@ class AuthProvider with ChangeNotifier {
   bool get isAuthenticated => _user != null;
 
   // Set callback for version check results
-  void setVersionCheckCallback(Function(bool updateAvailable, bool updateRequired, VersionData? versionData) callback) {
+  void setVersionCheckCallback(
+    Function(
+      bool updateAvailable,
+      bool updateRequired,
+      VersionData? versionData,
+    )
+    callback,
+  ) {
     _onVersionCheck = callback;
   }
 
@@ -54,9 +62,9 @@ class AuthProvider with ChangeNotifier {
     }
 
     try {
-      _user = await _authService
-          .getCurrentUser()
-          .timeout(const Duration(seconds: 8));
+      _user = await _authService.getCurrentUser().timeout(
+        const Duration(seconds: 8),
+      );
       if (_user == null) {
         final cachedUser = await _authService.getCachedUserOnly();
         if (cachedUser != null) {
@@ -94,9 +102,9 @@ class AuthProvider with ChangeNotifier {
     _isRefreshingSession = true;
 
     try {
-      final user = await _authService
-          .getCurrentUser()
-          .timeout(const Duration(seconds: 8));
+      final user = await _authService.getCurrentUser().timeout(
+        const Duration(seconds: 8),
+      );
       if (user != null) {
         _user = user;
         _error = null;
@@ -158,11 +166,11 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> logout() async {
     debugPrint('[AuthProvider] Logging out...');
-    
+
     // Stop all tracking services
     await TrackingStateService.clearTrackingState();
     await BackgroundTrackingService.stop();
-    
+
     // Hide check-in notification and stop periodic updates
     try {
       await PersistentNotificationService.hideCheckInNotification();
@@ -172,7 +180,7 @@ class AuthProvider with ChangeNotifier {
       debugPrint('[AuthProvider] ⚠️ Failed to clear check-in notification: $e');
       // Don't fail logout just because notification clear failed
     }
-    
+
     // Clear semua data offline (cache + pending) agar tidak tersisa untuk user lain / sesi berikutnya
     try {
       await OfflineStorageService().clearAll();
@@ -180,7 +188,7 @@ class AuthProvider with ChangeNotifier {
     } catch (e) {
       debugPrint('[AuthProvider] ⚠️ Failed to clear offline data: $e');
     }
-    
+
     await _authService.logout();
     _user = null;
     _error = null;
@@ -210,6 +218,8 @@ class AuthProvider with ChangeNotifier {
         avatarColor: _user!.avatarColor,
         positionId: _user!.positionId,
         siteId: _user!.siteId,
+        checkpointEnabled: _user!.checkpointEnabled,
+        effectiveCheckpointEnabled: _user!.effectiveCheckpointEnabled,
         position: _user!.position,
         site: _user!.site,
         hasPassword: _user!.hasPassword,
@@ -238,25 +248,21 @@ class AuthProvider with ChangeNotifier {
         notifyListeners();
         return {
           'success': true,
-          'email': result['email'] as String?, // ✅ Email dari backend (jika input NIK, ini adalah email user)
+          'email':
+              result['email']
+                  as String?, // ✅ Email dari backend (jika input NIK, ini adalah email user)
         };
       } else {
         _error = result['message'] as String? ?? 'Gagal mengirim OTP';
         _isLoading = false;
         notifyListeners();
-        return {
-          'success': false,
-          'email': null,
-        };
+        return {'success': false, 'email': null};
       }
     } catch (e) {
       _error = ErrorHandler.getErrorMessage(e);
       _isLoading = false;
       notifyListeners();
-      return {
-        'success': false,
-        'email': null,
-      };
+      return {'success': false, 'email': null};
     }
   }
 
@@ -288,13 +294,21 @@ class AuthProvider with ChangeNotifier {
   }
 
   /// Reset password dengan OTP yang sudah diverifikasi
-  Future<bool> resetPassword(String email, String otpCode, String newPassword) async {
+  Future<bool> resetPassword(
+    String email,
+    String otpCode,
+    String newPassword,
+  ) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final result = await _authService.resetPassword(email, otpCode, newPassword);
+      final result = await _authService.resetPassword(
+        email,
+        otpCode,
+        newPassword,
+      );
       if (result['success'] == true) {
         _error = null;
         _isLoading = false;

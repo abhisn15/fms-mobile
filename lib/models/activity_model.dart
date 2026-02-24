@@ -131,6 +131,8 @@ class DailyActivity {
   final double? latitude;
   final double? longitude;
   final String createdAt;
+  final String? checkpointTemplateId;
+  final String? checkpointTemplateName;
   final bool? isRead; // Status apakah sudah dibaca oleh admin/supervisor
   final int? viewsCount; // Jumlah admin/supervisor yang sudah melihat
   final bool isLocal; // Data lokal (offline) yang belum tersinkron
@@ -155,6 +157,8 @@ class DailyActivity {
     this.latitude,
     this.longitude,
     required this.createdAt,
+    this.checkpointTemplateId,
+    this.checkpointTemplateName,
     this.isRead,
     this.viewsCount,
     this.isLocal = false,
@@ -191,6 +195,8 @@ class DailyActivity {
       latitude: _doubleValue(json['latitude']),
       longitude: _doubleValue(json['longitude']),
       createdAt: createdAtValue,
+      checkpointTemplateId: json['checkpointTemplateId']?.toString(),
+      checkpointTemplateName: json['checkpointTemplateName']?.toString(),
       isRead: json['isRead'] as bool?,
       viewsCount: json['viewsCount'] != null ? _intValue(json['viewsCount']) : null,
       isLocal: json['isLocal'] == true,
@@ -218,6 +224,8 @@ class DailyActivity {
       if (latitude != null) 'latitude': latitude,
       if (longitude != null) 'longitude': longitude,
       'createdAt': createdAt,
+      if (checkpointTemplateId != null) 'checkpointTemplateId': checkpointTemplateId,
+      if (checkpointTemplateName != null) 'checkpointTemplateName': checkpointTemplateName,
       if (isRead != null) 'isRead': isRead,
       if (viewsCount != null) 'viewsCount': viewsCount,
       if (isLocal) 'isLocal': true,
@@ -228,10 +236,17 @@ class DailyActivity {
 class SecurityCheckpoint {
   final String id;
   final String name;
+  final int? order;
   final bool completed;
   final String? timestamp; // ISO 8601 timestamp
   final String? photoUrl;
   final String? photoReason; // Alasan/findings (sesuai backend)
+  final String? photoBeforeUrl;
+  final String? photoAfterUrl;
+  final List<String>? photoBeforeUrls;
+  final List<String>? photoAfterUrls;
+  final String? notes;
+  final double? accuracy;
   final double? latitude; // Untuk backward compatibility
   final double? longitude; // Untuk backward compatibility
   final Map<String, double>? coordinates; // Format backend: {lat, lng}
@@ -239,14 +254,41 @@ class SecurityCheckpoint {
   SecurityCheckpoint({
     required this.id,
     required this.name,
+    this.order,
     required this.completed,
     this.timestamp,
     this.photoUrl,
     this.photoReason,
+    this.photoBeforeUrl,
+    this.photoAfterUrl,
+    this.photoBeforeUrls,
+    this.photoAfterUrls,
+    this.notes,
+    this.accuracy,
     this.latitude,
     this.longitude,
     this.coordinates,
   });
+
+  List<String> get beforePhotos {
+    if (photoBeforeUrls != null && photoBeforeUrls!.isNotEmpty) {
+      return photoBeforeUrls!;
+    }
+    if (photoBeforeUrl != null && photoBeforeUrl!.trim().isNotEmpty) {
+      return [photoBeforeUrl!.trim()];
+    }
+    return [];
+  }
+
+  List<String> get afterPhotos {
+    if (photoAfterUrls != null && photoAfterUrls!.isNotEmpty) {
+      return photoAfterUrls!;
+    }
+    if (photoAfterUrl != null && photoAfterUrl!.trim().isNotEmpty) {
+      return [photoAfterUrl!.trim()];
+    }
+    return [];
+  }
 
   factory SecurityCheckpoint.fromJson(Map<String, dynamic> json) {
     // Handle coordinates dari backend (bisa {lat, lng} atau langsung latitude/longitude)
@@ -269,14 +311,36 @@ class SecurityCheckpoint {
         coordinates = {'lat': lat, 'lng': lng};
       }
     }
+
+    List<String>? beforeUrls;
+    if (json['photoBeforeUrls'] is List) {
+      beforeUrls = (json['photoBeforeUrls'] as List)
+          .map((item) => item == null ? '' : item.toString())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+    List<String>? afterUrls;
+    if (json['photoAfterUrls'] is List) {
+      afterUrls = (json['photoAfterUrls'] as List)
+          .map((item) => item == null ? '' : item.toString())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
     
     return SecurityCheckpoint(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
+      order: _intValue(json['order']),
       completed: json['completed'] as bool? ?? false,
       timestamp: json['timestamp'] as String?,
       photoUrl: json['photoUrl'] as String?,
       photoReason: json['photoReason'] as String? ?? json['reason'] as String?, // Backward compatibility
+      photoBeforeUrl: json['photoBeforeUrl'] as String?,
+      photoAfterUrl: json['photoAfterUrl'] as String?,
+      photoBeforeUrls: beforeUrls,
+      photoAfterUrls: afterUrls,
+      notes: json['notes'] as String?,
+      accuracy: _doubleValue(json['accuracy']),
       latitude: lat,
       longitude: lng,
       coordinates: coordinates,
@@ -289,6 +353,10 @@ class SecurityCheckpoint {
       'name': name,
       'completed': completed,
     };
+
+    if (order != null) {
+      json['order'] = order;
+    }
     
     if (timestamp != null) {
       json['timestamp'] = timestamp;
@@ -300,6 +368,30 @@ class SecurityCheckpoint {
     
     if (photoReason != null) {
       json['photoReason'] = photoReason; // Backend menggunakan photoReason
+    }
+
+    if (photoBeforeUrl != null) {
+      json['photoBeforeUrl'] = photoBeforeUrl;
+    }
+
+    if (photoAfterUrl != null) {
+      json['photoAfterUrl'] = photoAfterUrl;
+    }
+
+    if (photoBeforeUrls != null) {
+      json['photoBeforeUrls'] = photoBeforeUrls;
+    }
+
+    if (photoAfterUrls != null) {
+      json['photoAfterUrls'] = photoAfterUrls;
+    }
+
+    if (notes != null) {
+      json['notes'] = notes;
+    }
+
+    if (accuracy != null) {
+      json['accuracy'] = accuracy;
     }
     
     // Format coordinates sesuai backend: {lat, lng}

@@ -19,10 +19,13 @@ class User {
   final String? pemilikRekening;
   final String? positionId;
   final String? siteId;
+  final bool? checkpointEnabled; // Override per user (null = ikut site)
+  final bool? effectiveCheckpointEnabled; // Flag efektif dari backend
   final Position? position;
   final Site? site;
   final bool? hasPassword; // Indicates if user has set a password
-  final bool? needsPasswordChange; // Indicates if user is still using default password
+  final bool?
+  needsPasswordChange; // Indicates if user is still using default password
 
   User({
     required this.id,
@@ -45,6 +48,8 @@ class User {
     this.pemilikRekening,
     this.positionId,
     this.siteId,
+    this.checkpointEnabled,
+    this.effectiveCheckpointEnabled,
     this.position,
     this.site,
     this.hasPassword,
@@ -55,10 +60,10 @@ class User {
     // Ensure name is never null - use email prefix as fallback
     final name = json['name'] as String?;
     final email = json['email'] as String? ?? '';
-    final displayName = (name != null && name.trim().isNotEmpty) 
-        ? name 
+    final displayName = (name != null && name.trim().isNotEmpty)
+        ? name
         : (email.isNotEmpty ? email.split('@')[0] : 'User');
-    
+
     return User(
       id: json['id'] as String? ?? '',
       name: displayName,
@@ -80,7 +85,11 @@ class User {
       pemilikRekening: json['pemilikRekening'] as String?,
       positionId: json['positionId'] as String?,
       siteId: json['siteId'] as String?,
-      position: json['position'] != null ? Position.fromJson(json['position']) : null,
+      checkpointEnabled: json['checkpointEnabled'] as bool?,
+      effectiveCheckpointEnabled: json['effectiveCheckpointEnabled'] as bool?,
+      position: json['position'] != null
+          ? Position.fromJson(json['position'])
+          : null,
       site: json['site'] != null ? Site.fromJson(json['site']) : null,
       hasPassword: json['hasPassword'] as bool?,
       needsPasswordChange: json['needsPasswordChange'] as bool?,
@@ -109,6 +118,8 @@ class User {
       'pemilikRekening': pemilikRekening,
       'positionId': positionId,
       'siteId': siteId,
+      'checkpointEnabled': checkpointEnabled,
+      'effectiveCheckpointEnabled': effectiveCheckpointEnabled,
       'position': position?.toJson(),
       'site': site?.toJson(),
       'hasPassword': hasPassword,
@@ -122,11 +133,7 @@ class Position {
   final String positionId;
   final String name;
 
-  Position({
-    required this.id,
-    required this.positionId,
-    required this.name,
-  });
+  Position({required this.id, required this.positionId, required this.name});
 
   factory Position.fromJson(Map<String, dynamic> json) {
     return Position(
@@ -137,11 +144,7 @@ class Position {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'positionId': positionId,
-      'name': name,
-    };
+    return {'id': id, 'positionId': positionId, 'name': name};
   }
 }
 
@@ -167,8 +170,9 @@ class Site {
   final double? longitude;
   final int? maxRadiusMeters;
   final int? lateToleranceMinutes;
+  final bool? checkpointEnabled;
   final Map<String, dynamic>? featureFlags;
-  
+
   Site({
     required this.id,
     required this.siteId,
@@ -177,6 +181,7 @@ class Site {
     this.longitude,
     this.maxRadiusMeters,
     this.lateToleranceMinutes,
+    this.checkpointEnabled,
     this.featureFlags,
   });
 
@@ -199,6 +204,7 @@ class Site {
       longitude: _parseDouble(json['longitude']),
       maxRadiusMeters: _parseInt(json['maxRadiusMeters']),
       lateToleranceMinutes: _parseInt(json['lateToleranceMinutes']),
+      checkpointEnabled: json['checkpointEnabled'] as bool?,
       featureFlags: json['featureFlags'] is Map<String, dynamic>
           ? json['featureFlags'] as Map<String, dynamic>
           : null,
@@ -214,6 +220,7 @@ class Site {
       'longitude': longitude,
       'maxRadiusMeters': maxRadiusMeters,
       'lateToleranceMinutes': lateToleranceMinutes,
+      'checkpointEnabled': checkpointEnabled,
       if (featureFlags != null) 'featureFlags': featureFlags,
     };
   }

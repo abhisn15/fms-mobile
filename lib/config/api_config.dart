@@ -79,6 +79,12 @@ class ApiConfig {
   static const String leaderShiftMaster = '/api/leader/shifts/master';
   static const String leaderAttendance = '/api/leader/attendance';
   static const String leaderTasks = '/api/leader/tasks';
+  static const String leaderCheckpointTemplates =
+      '/api/leader/checkpoint-templates';
+  static const String leaderCheckpointAssignments =
+      '/api/leader/checkpoint-assignments';
+  static const String leaderCheckpointProgress =
+      '/api/leader/checkpoint-progress';
   static const String essTasks = '/api/ess/tasks';
 
   // Helper methods

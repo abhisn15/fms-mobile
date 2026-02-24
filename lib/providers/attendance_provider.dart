@@ -26,6 +26,8 @@ class AttendanceProvider with ChangeNotifier {
   // Flags to prevent double initialization
   bool _backgroundTrackingInitialized = false;
   bool _realtimeTrackingInitialized = false;
+  bool _trackingEnabledByPolicy = false;
+  int _trackingIntervalSeconds = 60;
 
   // Flags to prevent double API calls
   bool _checkInInProgress = false;
@@ -42,12 +44,15 @@ class AttendanceProvider with ChangeNotifier {
     }
     return null;
   }
+
   AttendanceRecord? get todayAttendance => activeAttendance;
   List<AttendanceRecord> get recentAttendance => _attendanceData?.recent ?? [];
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isOfflineMode => _isOfflineMode;
   bool get isRealtimeTracking => _realtimeService.isTracking;
+  bool get isTrackingEnabledByPolicy => _trackingEnabledByPolicy;
+  int get trackingIntervalSeconds => _trackingIntervalSeconds;
 
   @override
   void dispose() {
@@ -102,7 +107,9 @@ class AttendanceProvider with ChangeNotifier {
 
   void _safeSyncPendingLocationLogs() {
     _realtimeService.syncPendingLocationLogs().catchError((e) {
-      debugPrint('[AttendanceProvider] syncPendingLocationLogs not available: $e');
+      debugPrint(
+        '[AttendanceProvider] syncPendingLocationLogs not available: $e',
+      );
     });
   }
 
@@ -110,7 +117,9 @@ class AttendanceProvider with ChangeNotifier {
     try {
       await _realtimeService.syncPendingLocationLogs();
     } catch (e) {
-      debugPrint('[AttendanceProvider] syncPendingLocationLogs async not available: $e');
+      debugPrint(
+        '[AttendanceProvider] syncPendingLocationLogs async not available: $e',
+      );
     }
   }
 
@@ -129,7 +138,9 @@ class AttendanceProvider with ChangeNotifier {
   }
 
   String _buildClientKey(String type, String? shiftId, String date) {
-    final shiftKey = (shiftId == null || shiftId.isEmpty) ? 'no_shift' : shiftId;
+    final shiftKey = (shiftId == null || shiftId.isEmpty)
+        ? 'no_shift'
+        : shiftId;
     return '$type|$shiftKey|$date';
   }
 
@@ -181,7 +192,9 @@ class AttendanceProvider with ChangeNotifier {
       await syncPendingAttendance();
       debugPrint('[AttendanceProvider] Sync pending location logs');
       _realtimeService.syncPendingLocationLogs().catchError((e) {
-        debugPrint('[AttendanceProvider] syncPendingLocationLogs not available: $e');
+        debugPrint(
+          '[AttendanceProvider] syncPendingLocationLogs not available: $e',
+        );
       });
       await syncRealtimeTracking();
       await ensureBackgroundTracking();
@@ -201,21 +214,27 @@ class AttendanceProvider with ChangeNotifier {
         try {
           await _realtimeService.stopRealtimeTracking();
         } catch (e) {
-          debugPrint('[AttendanceProvider] Failed to stop realtime tracking during policy enforce: $e');
+          debugPrint(
+            '[AttendanceProvider] Failed to stop realtime tracking during policy enforce: $e',
+          );
         }
       }
 
       try {
         await BackgroundTrackingService.stop();
       } catch (e) {
-        debugPrint('[AttendanceProvider] Failed to stop background tracking during policy enforce: $e');
+        debugPrint(
+          '[AttendanceProvider] Failed to stop background tracking during policy enforce: $e',
+        );
       }
 
       _realtimeTrackingInitialized = false;
       _backgroundTrackingInitialized = false;
 
       if (!isEnabled) {
-        debugPrint('[AttendanceProvider] Tracking policy: disabled by site/global feature flags');
+        debugPrint(
+          '[AttendanceProvider] Tracking policy: disabled by site/global feature flags',
+        );
       }
     }
   }
@@ -231,7 +250,9 @@ class AttendanceProvider with ChangeNotifier {
     }
 
     if (today.id.isEmpty) {
-      debugPrint('[AttendanceProvider] Cannot start tracking: attendanceId kosong');
+      debugPrint(
+        '[AttendanceProvider] Cannot start tracking: attendanceId kosong',
+      );
       return;
     }
 
@@ -258,7 +279,9 @@ class AttendanceProvider with ChangeNotifier {
     final isEnabled = trackingSettings['isEnabled'] as bool? ?? false;
 
     if (!isEnabled) {
-      debugPrint('[AttendanceProvider] Realtime tracking disabled for this site/user, skipping auto-start');
+      debugPrint(
+        '[AttendanceProvider] Realtime tracking disabled for this site/user, skipping auto-start',
+      );
       try {
         await _realtimeService.stopRealtimeTracking();
       } catch (_) {}
@@ -280,14 +303,22 @@ class AttendanceProvider with ChangeNotifier {
     }
   }
 
-  Future<void> loadAttendance({DateTime? startDate, DateTime? endDate, bool forceRefresh = false}) async {
+  Future<void> loadAttendance({
+    DateTime? startDate,
+    DateTime? endDate,
+    bool forceRefresh = false,
+  }) async {
     // Prevent double load calls
     if (_loadAttendanceInProgress) {
-      debugPrint('[AttendanceProvider] Load attendance already in progress, ignoring duplicate call');
+      debugPrint(
+        '[AttendanceProvider] Load attendance already in progress, ignoring duplicate call',
+      );
       return;
     }
 
-    debugPrint('[AttendanceProvider] Loading attendance... (forceRefresh: $forceRefresh)');
+    debugPrint(
+      '[AttendanceProvider] Loading attendance... (forceRefresh: $forceRefresh)',
+    );
     _loadAttendanceInProgress = true;
 
     // Load from local storage first (instant display)
@@ -299,7 +330,9 @@ class AttendanceProvider with ChangeNotifier {
         _error = null;
         _isLoading = false;
         notifyListeners();
-        debugPrint('[AttendanceProvider] ✓ Attendance loaded instantly from offline storage');
+        debugPrint(
+          '[AttendanceProvider] ✓ Attendance loaded instantly from offline storage',
+        );
       }
     }
 
@@ -334,13 +367,17 @@ class AttendanceProvider with ChangeNotifier {
         } catch (e) {
           // If API fails, keep using cached data if available
           if (_attendanceData == null) {
-            debugPrint('[AttendanceProvider] ⚠ API failed, trying offline storage...');
+            debugPrint(
+              '[AttendanceProvider] ⚠ API failed, trying offline storage...',
+            );
             final offlineData = await _offlineStorage.getAttendance();
             if (offlineData != null && offlineData.isNotEmpty) {
               _attendanceData = AttendancePayload.fromJson(offlineData);
               _isOfflineMode = true;
               _error = 'Mode offline - Data terakhir yang tersimpan';
-              debugPrint('[AttendanceProvider] ✓ Attendance loaded from offline storage');
+              debugPrint(
+                '[AttendanceProvider] ✓ Attendance loaded from offline storage',
+              );
             } else {
               throw e;
             }
@@ -359,7 +396,9 @@ class AttendanceProvider with ChangeNotifier {
             _attendanceData = AttendancePayload.fromJson(offlineData);
             _isOfflineMode = true;
             _error = 'Mode offline - Data terakhir yang tersimpan';
-            debugPrint('[AttendanceProvider] ✓ Attendance loaded from offline storage');
+            debugPrint(
+              '[AttendanceProvider] ✓ Attendance loaded from offline storage',
+            );
           } else {
             throw Exception('Tidak ada data offline tersedia');
           }
@@ -370,7 +409,9 @@ class AttendanceProvider with ChangeNotifier {
       }
 
       if (todayAttendance != null) {
-        debugPrint('[AttendanceProvider] Active today: ${todayAttendance!.checkIn} - ${todayAttendance!.checkOut}');
+        debugPrint(
+          '[AttendanceProvider] Active today: ${todayAttendance!.checkIn} - ${todayAttendance!.checkOut}',
+        );
 
         // Restore persistent notification if check-in is active
         final today = todayAttendance!;
@@ -378,9 +419,13 @@ class AttendanceProvider with ChangeNotifier {
           try {
             await PersistentNotificationService.showCheckInNotification(today);
             PersistentNotificationService.startPeriodicUpdates(today);
-            debugPrint('[AttendanceProvider] ??? Persistent notification restored for active check-in');
+            debugPrint(
+              '[AttendanceProvider] ??? Persistent notification restored for active check-in',
+            );
           } catch (e) {
-            debugPrint('[AttendanceProvider] Failed to restore persistent notification: $e');
+            debugPrint(
+              '[AttendanceProvider] Failed to restore persistent notification: $e',
+            );
           }
         }
       }
@@ -391,7 +436,9 @@ class AttendanceProvider with ChangeNotifier {
         debugPrint('[AttendanceProvider] ✗ Error loading attendance: $_error');
       } else {
         // Keep cached data even if refresh fails
-        debugPrint('[AttendanceProvider] ⚠ Refresh failed, keeping cached data: $e');
+        debugPrint(
+          '[AttendanceProvider] ⚠ Refresh failed, keeping cached data: $e',
+        );
       }
     } finally {
       _isLoading = false;
@@ -440,13 +487,21 @@ class AttendanceProvider with ChangeNotifier {
         }
       }
     } catch (e) {
-      debugPrint('[AttendanceProvider] Failed to load effective tracking settings: $e');
+      debugPrint(
+        '[AttendanceProvider] Failed to load effective tracking settings: $e',
+      );
     }
 
-    return {
-      'intervalSeconds': intervalSeconds,
-      'isEnabled': isEnabled,
-    };
+    final shouldNotify =
+        _trackingEnabledByPolicy != isEnabled ||
+        _trackingIntervalSeconds != intervalSeconds;
+    _trackingEnabledByPolicy = isEnabled;
+    _trackingIntervalSeconds = intervalSeconds;
+    if (shouldNotify) {
+      notifyListeners();
+    }
+
+    return {'intervalSeconds': intervalSeconds, 'isEnabled': isEnabled};
   }
 
   Future<bool> checkIn({
@@ -458,12 +513,16 @@ class AttendanceProvider with ChangeNotifier {
   }) async {
     // Prevent double check-in calls
     if (_checkInInProgress) {
-      debugPrint('[AttendanceProvider] Check-in already in progress, ignoring duplicate call');
+      debugPrint(
+        '[AttendanceProvider] Check-in already in progress, ignoring duplicate call',
+      );
       return false;
     }
 
     debugPrint('[AttendanceProvider] Check-in initiated');
-    debugPrint('[AttendanceProvider] Shift ID: ${shiftId ?? "null (no shift)"}');
+    debugPrint(
+      '[AttendanceProvider] Shift ID: ${shiftId ?? "null (no shift)"}',
+    );
     _isLoading = true;
     _error = null;
     _checkInInProgress = true;
@@ -476,7 +535,9 @@ class AttendanceProvider with ChangeNotifier {
 
     try {
       if (resolvedLatitude == null || resolvedLongitude == null) {
-        final location = await _attendanceService.getRequiredLocation(actionLabel: 'check-in');
+        final location = await _attendanceService.getRequiredLocation(
+          actionLabel: 'check-in',
+        );
         resolvedLatitude = location['latitude'];
         resolvedLongitude = location['longitude'];
       }
@@ -504,7 +565,9 @@ class AttendanceProvider with ChangeNotifier {
           );
 
           if (result['success'] == true) {
-            debugPrint('[AttendanceProvider] ✓ Check-in successful, reloading attendance...');
+            debugPrint(
+              '[AttendanceProvider] ✓ Check-in successful, reloading attendance...',
+            );
 
             // Load attendance dengan forceRefresh untuk mendapatkan data terbaru
             final now = DateTime.now();
@@ -533,23 +596,34 @@ class AttendanceProvider with ChangeNotifier {
 
             // Start realtime location tracking setelah check-in berhasil
             final user = sessionUser ?? await _authService.getCurrentUser();
-            debugPrint('[AttendanceProvider] Current user: ${user?.name} (${user?.id})');
+            debugPrint(
+              '[AttendanceProvider] Current user: ${user?.name} (${user?.id})',
+            );
 
             try {
-              debugPrint('[AttendanceProvider] Starting realtime location tracking...');
+              debugPrint(
+                '[AttendanceProvider] Starting realtime location tracking...',
+              );
 
               final trackingSettings = await _getEffectiveTrackingSettings();
-              final intervalSeconds = trackingSettings['intervalSeconds'] as int? ?? 60;
+              final intervalSeconds =
+                  trackingSettings['intervalSeconds'] as int? ?? 60;
               final isEnabled = trackingSettings['isEnabled'] as bool? ?? false;
 
-              debugPrint('[AttendanceProvider] Effective tracking settings: interval=$intervalSeconds, enabled=$isEnabled');
+              debugPrint(
+                '[AttendanceProvider] Effective tracking settings: interval=$intervalSeconds, enabled=$isEnabled',
+              );
 
               if (!isEnabled) {
-                debugPrint('[AttendanceProvider] Realtime tracking disabled by site/global settings');
+                debugPrint(
+                  '[AttendanceProvider] Realtime tracking disabled by site/global settings',
+                );
                 await _realtimeService.stopRealtimeTracking();
               } else {
                 if (user != null && responseAttendanceId != null) {
-                  debugPrint('[AttendanceProvider] Using attendance ID from response: $responseAttendanceId');
+                  debugPrint(
+                    '[AttendanceProvider] Using attendance ID from response: $responseAttendanceId',
+                  );
 
                   try {
                     await _realtimeService.startRealtimeTracking(
@@ -558,14 +632,23 @@ class AttendanceProvider with ChangeNotifier {
                       checkInDate: responseCheckInDate ?? now,
                       intervalSeconds: intervalSeconds,
                     );
-                    debugPrint('[AttendanceProvider] Realtime tracking started with interval: $intervalSeconds seconds');
+                    debugPrint(
+                      '[AttendanceProvider] Realtime tracking started with interval: $intervalSeconds seconds',
+                    );
                     trackingStarted = true;
-                    debugPrint('[AttendanceProvider] Realtime tracking started (response record)');
+                    debugPrint(
+                      '[AttendanceProvider] Realtime tracking started (response record)',
+                    );
                   } catch (e) {
-                    debugPrint('[AttendanceProvider] Failed to start realtime tracking: $e');
+                    debugPrint(
+                      '[AttendanceProvider] Failed to start realtime tracking: $e',
+                    );
 
-                    if (e.toString().contains('izin') || e.toString().contains('permission')) {
-                      debugPrint('[AttendanceProvider] Permission error detected');
+                    if (e.toString().contains('izin') ||
+                        e.toString().contains('permission')) {
+                      debugPrint(
+                        '[AttendanceProvider] Permission error detected',
+                      );
                       rethrow;
                     }
                   }
@@ -575,13 +658,21 @@ class AttendanceProvider with ChangeNotifier {
                   await Future.delayed(const Duration(milliseconds: 500));
 
                   final todayRecord = todayAttendance;
-                  debugPrint('[AttendanceProvider] Today attendance: ${todayRecord?.checkIn} - ${todayRecord?.checkOut}, ID: ${todayRecord?.id}');
+                  debugPrint(
+                    '[AttendanceProvider] Today attendance: ${todayRecord?.checkIn} - ${todayRecord?.checkOut}, ID: ${todayRecord?.id}',
+                  );
 
                   if (user != null && todayRecord != null) {
-                    debugPrint('[AttendanceProvider] User and attendance record available');
+                    debugPrint(
+                      '[AttendanceProvider] User and attendance record available',
+                    );
 
-                    final attendanceId = todayRecord.id.isNotEmpty ? todayRecord.id : 'temp-${user.id}-${now.millisecondsSinceEpoch}';
-                    debugPrint('[AttendanceProvider] Using attendance ID: $attendanceId');
+                    final attendanceId = todayRecord.id.isNotEmpty
+                        ? todayRecord.id
+                        : 'temp-${user.id}-${now.millisecondsSinceEpoch}';
+                    debugPrint(
+                      '[AttendanceProvider] Using attendance ID: $attendanceId',
+                    );
 
                     await _realtimeService.startRealtimeTracking(
                       user: user,
@@ -589,14 +680,20 @@ class AttendanceProvider with ChangeNotifier {
                       checkInDate: now,
                       intervalSeconds: intervalSeconds,
                     );
-                    debugPrint('[AttendanceProvider] Realtime tracking started successfully');
+                    debugPrint(
+                      '[AttendanceProvider] Realtime tracking started successfully',
+                    );
                   } else {
-                    debugPrint('[AttendanceProvider] Cannot start tracking: user=${user != null}, todayRecord=${todayRecord != null}');
+                    debugPrint(
+                      '[AttendanceProvider] Cannot start tracking: user=${user != null}, todayRecord=${todayRecord != null}',
+                    );
                   }
                 }
               }
             } catch (e) {
-              debugPrint('[AttendanceProvider] Failed to start realtime tracking: $e');
+              debugPrint(
+                '[AttendanceProvider] Failed to start realtime tracking: $e',
+              );
               debugPrint('[AttendanceProvider] Stack trace: ${e.toString()}');
             }
 
@@ -604,17 +701,25 @@ class AttendanceProvider with ChangeNotifier {
             try {
               await ensureBackgroundTracking();
             } catch (e) {
-              debugPrint('[AttendanceProvider] Failed to ensure background tracking after check-in: $e');
+              debugPrint(
+                '[AttendanceProvider] Failed to ensure background tracking after check-in: $e',
+              );
             }
 
             // Show persistent notification for active check-in
             try {
               if (todayAttendance != null) {
-                await PersistentNotificationService.showCheckInNotification(todayAttendance!);
-                PersistentNotificationService.startPeriodicUpdates(todayAttendance!);
+                await PersistentNotificationService.showCheckInNotification(
+                  todayAttendance!,
+                );
+                PersistentNotificationService.startPeriodicUpdates(
+                  todayAttendance!,
+                );
               }
             } catch (e) {
-              debugPrint('[AttendanceProvider] Failed to show persistent notification: $e');
+              debugPrint(
+                '[AttendanceProvider] Failed to show persistent notification: $e',
+              );
             }
 
             return true;
@@ -626,20 +731,26 @@ class AttendanceProvider with ChangeNotifier {
         } catch (e) {
           // Check if it's a memory-related error
           final errorStr = e.toString().toLowerCase();
-          if (errorStr.contains('memory') || 
+          if (errorStr.contains('memory') ||
               errorStr.contains('outofmemory') ||
               errorStr.contains('terlalu besar') ||
               errorStr.contains('timeout')) {
             // Don't save to pending for memory/timeout errors - user needs to retry with smaller photo
             _error = ErrorHandler.getErrorMessage(e);
-            debugPrint('[AttendanceProvider] ✗ Check-in failed due to memory/timeout: $_error');
+            debugPrint(
+              '[AttendanceProvider] ✗ Check-in failed due to memory/timeout: $_error',
+            );
             return false;
           }
-          
+
           // If online check-in fails for other reasons, save to pending
-          debugPrint('[AttendanceProvider] ⚠ Online check-in failed, saving to pending...');
+          debugPrint(
+            '[AttendanceProvider] ⚠ Online check-in failed, saving to pending...',
+          );
           try {
-            final pendingDate = _normalizeDate(DateTime.now().toIso8601String());
+            final pendingDate = _normalizeDate(
+              DateTime.now().toIso8601String(),
+            );
             final clientKey = _buildClientKey('checkin', shiftId, pendingDate);
             final alreadySaved = await _hasAttendanceFor(
               type: 'checkin',
@@ -648,7 +759,9 @@ class AttendanceProvider with ChangeNotifier {
             );
             if (alreadySaved) {
               _error = 'Check-in sudah tercatat, tidak perlu disinkronkan lagi';
-              debugPrint('[AttendanceProvider] Duplicate check-in detected, skipping pending save');
+              debugPrint(
+                '[AttendanceProvider] Duplicate check-in detected, skipping pending save',
+              );
               return false;
             }
             await _offlineStorage.savePendingCheckIn({
@@ -664,14 +777,18 @@ class AttendanceProvider with ChangeNotifier {
             debugPrint('[AttendanceProvider] ✓ Check-in saved to pending');
             return true;
           } catch (saveError) {
-            debugPrint('[AttendanceProvider] ✗ Failed to save to pending: $saveError');
+            debugPrint(
+              '[AttendanceProvider] ✗ Failed to save to pending: $saveError',
+            );
             _error = ErrorHandler.getErrorMessage(e);
             return false;
           }
         }
       } else {
         // Save to pending for offline mode
-        debugPrint('[AttendanceProvider] ⚠ Offline mode, saving check-in to pending...');
+        debugPrint(
+          '[AttendanceProvider] ⚠ Offline mode, saving check-in to pending...',
+        );
         final pendingDate = _normalizeDate(DateTime.now().toIso8601String());
         final clientKey = _buildClientKey('checkin', shiftId, pendingDate);
         final alreadySaved = await _hasAttendanceFor(
@@ -681,7 +798,9 @@ class AttendanceProvider with ChangeNotifier {
         );
         if (alreadySaved) {
           _error = 'Check-in sudah tercatat, tidak perlu disimpan ulang';
-          debugPrint('[AttendanceProvider] Duplicate check-in detected, skipping pending save');
+          debugPrint(
+            '[AttendanceProvider] Duplicate check-in detected, skipping pending save',
+          );
           return false;
         }
         await _offlineStorage.savePendingCheckIn({
@@ -718,7 +837,9 @@ class AttendanceProvider with ChangeNotifier {
   }) async {
     // Prevent double check-out calls
     if (_checkOutInProgress) {
-      debugPrint('[AttendanceProvider] Check-out already in progress, ignoring duplicate call');
+      debugPrint(
+        '[AttendanceProvider] Check-out already in progress, ignoring duplicate call',
+      );
       return false;
     }
 
@@ -735,7 +856,9 @@ class AttendanceProvider with ChangeNotifier {
 
     try {
       if (resolvedLatitude == null || resolvedLongitude == null) {
-        final location = await _attendanceService.getRequiredLocation(actionLabel: 'check-out');
+        final location = await _attendanceService.getRequiredLocation(
+          actionLabel: 'check-out',
+        );
         resolvedLatitude = location['latitude'];
         resolvedLongitude = location['longitude'];
       }
@@ -764,18 +887,24 @@ class AttendanceProvider with ChangeNotifier {
           );
 
           if (result['success'] == true) {
-            debugPrint('[AttendanceProvider] ✓ Check-out successful, reloading attendance...');
+            debugPrint(
+              '[AttendanceProvider] ✓ Check-out successful, reloading attendance...',
+            );
             // Reset loading sebelum loadAttendance untuk menghindari loading state yang stuck
             _isLoading = false;
             notifyListeners();
 
             // Stop realtime location tracking setelah check-out berhasil
             try {
-              debugPrint('[AttendanceProvider] Stopping realtime location tracking...');
+              debugPrint(
+                '[AttendanceProvider] Stopping realtime location tracking...',
+              );
               await _realtimeService.stopRealtimeTracking();
               debugPrint('[AttendanceProvider] ✓ Realtime tracking stopped');
             } catch (e) {
-              debugPrint('[AttendanceProvider] Failed to stop realtime tracking: $e');
+              debugPrint(
+                '[AttendanceProvider] Failed to stop realtime tracking: $e',
+              );
               // Don't fail check-out just because tracking stop failed
             }
 
@@ -783,9 +912,13 @@ class AttendanceProvider with ChangeNotifier {
             try {
               await PersistentNotificationService.hideCheckInNotification();
               PersistentNotificationService.stopPeriodicUpdates();
-              debugPrint('[AttendanceProvider] ✓ Persistent notification hidden');
+              debugPrint(
+                '[AttendanceProvider] ✓ Persistent notification hidden',
+              );
             } catch (e) {
-              debugPrint('[AttendanceProvider] Failed to hide persistent notification: $e');
+              debugPrint(
+                '[AttendanceProvider] Failed to hide persistent notification: $e',
+              );
             }
 
             // Reset initialization flags for next check-in
@@ -809,29 +942,42 @@ class AttendanceProvider with ChangeNotifier {
         } catch (e) {
           // Check if it's a memory-related error
           final errorStr = e.toString().toLowerCase();
-          if (errorStr.contains('memory') || 
+          if (errorStr.contains('memory') ||
               errorStr.contains('outofmemory') ||
               errorStr.contains('terlalu besar') ||
               errorStr.contains('timeout')) {
             // Don't save to pending for memory/timeout errors - user needs to retry with smaller photo
             _error = ErrorHandler.getErrorMessage(e);
-            debugPrint('[AttendanceProvider] ✗ Check-out failed due to memory/timeout: $_error');
+            debugPrint(
+              '[AttendanceProvider] ✗ Check-out failed due to memory/timeout: $_error',
+            );
             return false;
           }
-          
+
           // If online check-out fails for other reasons, save to pending
-          debugPrint('[AttendanceProvider] ⚠ Online check-out failed, saving to pending...');
+          debugPrint(
+            '[AttendanceProvider] ⚠ Online check-out failed, saving to pending...',
+          );
           try {
-            final pendingDate = _normalizeDate(todayAttendance?.date ?? DateTime.now().toIso8601String());
-            final clientKey = _buildClientKey('checkout', resolvedShiftId, pendingDate);
+            final pendingDate = _normalizeDate(
+              todayAttendance?.date ?? DateTime.now().toIso8601String(),
+            );
+            final clientKey = _buildClientKey(
+              'checkout',
+              resolvedShiftId,
+              pendingDate,
+            );
             final alreadySaved = await _hasAttendanceFor(
               type: 'checkout',
               date: pendingDate,
               shiftId: resolvedShiftId,
             );
             if (alreadySaved) {
-              _error = 'Check-out sudah tercatat, tidak perlu disinkronkan lagi';
-              debugPrint('[AttendanceProvider] Duplicate check-out detected, skipping pending save');
+              _error =
+                  'Check-out sudah tercatat, tidak perlu disinkronkan lagi';
+              debugPrint(
+                '[AttendanceProvider] Duplicate check-out detected, skipping pending save',
+              );
               return false;
             }
             await _offlineStorage.savePendingCheckOut({
@@ -841,22 +987,33 @@ class AttendanceProvider with ChangeNotifier {
               'longitude': resolvedLongitude,
               'date': pendingDate,
               'clientKey': clientKey,
-              if (earlyCheckoutReason != null) 'earlyCheckoutReason': earlyCheckoutReason,
+              if (earlyCheckoutReason != null)
+                'earlyCheckoutReason': earlyCheckoutReason,
             });
             _error = 'Check-out disimpan untuk sync nanti';
             debugPrint('[AttendanceProvider] ✓ Check-out saved to pending');
             return true;
           } catch (saveError) {
-            debugPrint('[AttendanceProvider] ✗ Failed to save to pending: $saveError');
+            debugPrint(
+              '[AttendanceProvider] ✗ Failed to save to pending: $saveError',
+            );
             _error = ErrorHandler.getErrorMessage(e);
             return false;
           }
         }
       } else {
         // Save to pending for offline mode
-        debugPrint('[AttendanceProvider] ⚠ Offline mode, saving check-out to pending...');
-        final pendingDate = _normalizeDate(todayAttendance?.date ?? DateTime.now().toIso8601String());
-        final clientKey = _buildClientKey('checkout', resolvedShiftId, pendingDate);
+        debugPrint(
+          '[AttendanceProvider] ⚠ Offline mode, saving check-out to pending...',
+        );
+        final pendingDate = _normalizeDate(
+          todayAttendance?.date ?? DateTime.now().toIso8601String(),
+        );
+        final clientKey = _buildClientKey(
+          'checkout',
+          resolvedShiftId,
+          pendingDate,
+        );
         final alreadySaved = await _hasAttendanceFor(
           type: 'checkout',
           date: pendingDate,
@@ -864,7 +1021,9 @@ class AttendanceProvider with ChangeNotifier {
         );
         if (alreadySaved) {
           _error = 'Check-out sudah tercatat, tidak perlu disimpan ulang';
-          debugPrint('[AttendanceProvider] Duplicate check-out detected, skipping pending save');
+          debugPrint(
+            '[AttendanceProvider] Duplicate check-out detected, skipping pending save',
+          );
           return false;
         }
         await _offlineStorage.savePendingCheckOut({
@@ -874,7 +1033,8 @@ class AttendanceProvider with ChangeNotifier {
           'longitude': resolvedLongitude,
           'date': pendingDate,
           'clientKey': clientKey,
-          if (earlyCheckoutReason != null) 'earlyCheckoutReason': earlyCheckoutReason,
+          if (earlyCheckoutReason != null)
+            'earlyCheckoutReason': earlyCheckoutReason,
         });
         _error = 'Mode offline - Check-out akan disinkronkan saat online';
         debugPrint('[AttendanceProvider] ✓ Check-out saved to pending');
@@ -909,7 +1069,9 @@ class AttendanceProvider with ChangeNotifier {
       try {
         await _realtimeService.syncPendingLocationLogs();
       } catch (e) {
-        debugPrint('[AttendanceProvider] syncPendingLocationLogs async not available: $e');
+        debugPrint(
+          '[AttendanceProvider] syncPendingLocationLogs async not available: $e',
+        );
       }
       if (checkInSynced || checkOutSynced) {
         final now = DateTime.now();
@@ -941,7 +1103,9 @@ class AttendanceProvider with ChangeNotifier {
     var synced = false;
     for (int i = pending.length - 1; i >= 0; i--) {
       final item = pending[i];
-      final pendingDate = _normalizeDate(item['date']?.toString() ?? item['timestamp']?.toString());
+      final pendingDate = _normalizeDate(
+        item['date']?.toString() ?? item['timestamp']?.toString(),
+      );
       final photoPath = item['photo']?.toString();
       if (photoPath == null || photoPath.isEmpty) {
         await _offlineStorage.removePendingCheckIn(i);
@@ -1006,7 +1170,9 @@ class AttendanceProvider with ChangeNotifier {
     var synced = false;
     for (int i = pending.length - 1; i >= 0; i--) {
       final item = pending[i];
-      final pendingDate = _normalizeDate(item['date']?.toString() ?? item['timestamp']?.toString());
+      final pendingDate = _normalizeDate(
+        item['date']?.toString() ?? item['timestamp']?.toString(),
+      );
       final photoPath = item['photo']?.toString();
       if (photoPath == null || photoPath.isEmpty) {
         await _offlineStorage.removePendingCheckOut(i);
@@ -1046,7 +1212,8 @@ class AttendanceProvider with ChangeNotifier {
         synced = true;
       } else {
         final message = (result['message'] ?? '').toString().toLowerCase();
-        if (message.contains('sudah check-out') || message.contains('already')) {
+        if (message.contains('sudah check-out') ||
+            message.contains('already')) {
           await _offlineStorage.removePendingCheckOut(i);
         }
       }
@@ -1080,13 +1247,18 @@ class AttendanceProvider with ChangeNotifier {
       if (user != null && todayAttendance != null) {
         final today = todayAttendance!;
         if (today.checkIn != null && today.checkOut == null) {
-          debugPrint('[AttendanceProvider] 🔄 Force restarting location tracking...');
+          debugPrint(
+            '[AttendanceProvider] 🔄 Force restarting location tracking...',
+          );
           final trackingSettings = await _getEffectiveTrackingSettings();
-          final intervalSeconds = trackingSettings['intervalSeconds'] as int? ?? 300;
+          final intervalSeconds =
+              trackingSettings['intervalSeconds'] as int? ?? 300;
           final isEnabled = trackingSettings['isEnabled'] as bool? ?? false;
 
           if (!isEnabled) {
-            debugPrint('[AttendanceProvider] Tracking disabled by site/global settings, test skipped');
+            debugPrint(
+              '[AttendanceProvider] Tracking disabled by site/global settings, test skipped',
+            );
             return;
           }
 
@@ -1096,12 +1268,18 @@ class AttendanceProvider with ChangeNotifier {
             checkInDate: DateTime.parse(today.checkIn!),
             intervalSeconds: intervalSeconds,
           ); // Use server setting
-          debugPrint('[AttendanceProvider] ✅ Location tracking restarted for testing');
+          debugPrint(
+            '[AttendanceProvider] ✅ Location tracking restarted for testing',
+          );
         } else {
-          debugPrint('[AttendanceProvider] ❌ No active check-in found for testing');
+          debugPrint(
+            '[AttendanceProvider] ❌ No active check-in found for testing',
+          );
         }
       } else {
-        debugPrint('[AttendanceProvider] ❌ No user or attendance data for testing');
+        debugPrint(
+          '[AttendanceProvider] ❌ No user or attendance data for testing',
+        );
       }
     } catch (e) {
       debugPrint('[AttendanceProvider] ❌ Failed to test location tracking: $e');
@@ -1138,7 +1316,9 @@ class AttendanceProvider with ChangeNotifier {
       try {
         await _realtimeService.stopRealtimeTracking();
       } catch (_) {}
-      debugPrint('[AttendanceProvider] Tracking disabled by site/global settings, skip resume');
+      debugPrint(
+        '[AttendanceProvider] Tracking disabled by site/global settings, skip resume',
+      );
       return;
     }
 
@@ -1161,32 +1341,44 @@ class AttendanceProvider with ChangeNotifier {
   /// Pastikan background service tetap running untuk location tracking
   Future<void> ensureBackgroundTracking() async {
     if (_backgroundTrackingInitialized) {
-      debugPrint('[AttendanceProvider] Background tracking already initialized, skipping');
+      debugPrint(
+        '[AttendanceProvider] Background tracking already initialized, skipping',
+      );
       return;
     }
 
     final today = todayAttendance;
     if (today == null || today.checkIn == null || today.checkOut != null) {
-      debugPrint('[AttendanceProvider] No active attendance, skipping background tracking');
+      debugPrint(
+        '[AttendanceProvider] No active attendance, skipping background tracking',
+      );
       return;
     }
 
     final trackingSettings = await _getEffectiveTrackingSettings();
     final isEnabled = trackingSettings['isEnabled'] as bool? ?? false;
     if (!isEnabled) {
-      debugPrint('[AttendanceProvider] Background tracking skipped: disabled by site/global settings');
+      debugPrint(
+        '[AttendanceProvider] Background tracking skipped: disabled by site/global settings',
+      );
       _backgroundTrackingInitialized = false;
       return;
     }
 
     try {
-      debugPrint('[AttendanceProvider] Starting background tracking service...');
+      debugPrint(
+        '[AttendanceProvider] Starting background tracking service...',
+      );
       await BackgroundTrackingService.ensureRunning();
       debugPrint('[AttendanceProvider] Background tracking service started');
       _backgroundTrackingInitialized = true;
-      debugPrint('[AttendanceProvider] Background tracking service initialized');
+      debugPrint(
+        '[AttendanceProvider] Background tracking service initialized',
+      );
     } catch (e) {
-      debugPrint('[AttendanceProvider] Failed to ensure background tracking: $e');
+      debugPrint(
+        '[AttendanceProvider] Failed to ensure background tracking: $e',
+      );
     }
   }
 }

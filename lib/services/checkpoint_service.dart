@@ -18,13 +18,17 @@ class CheckpointService {
           : '';
 
       debugPrint('[CheckpointService] Loading checkpoints...');
-      final response = await _apiService.get('${ApiConfig.essCheckpoints}$queryString');
+      final response = await _apiService.get(
+        '${ApiConfig.essCheckpoints}$queryString',
+      );
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data['data'];
         if (data is Map<String, dynamic>) {
           final payload = EssCheckpointPayload.fromJson(data);
-          debugPrint('[CheckpointService] hasCheckpoint: ${payload.hasCheckpoint}, items: ${payload.progress?.length ?? 0}');
+          debugPrint(
+            '[CheckpointService] hasCheckpoint: ${payload.hasCheckpoint}, items: ${payload.progress?.length ?? 0}',
+          );
           return payload;
         }
       }
@@ -43,6 +47,7 @@ class CheckpointService {
     File? photoAfter,
     List<File>? photosBefore,
     List<File>? photosAfter,
+    String? templateId,
     String? notes,
     String? date,
     double? latitude,
@@ -50,9 +55,10 @@ class CheckpointService {
     double? accuracy,
   }) async {
     try {
-      final formDataMap = <String, dynamic>{
-        'itemId': itemId,
-      };
+      final formDataMap = <String, dynamic>{'itemId': itemId};
+      if (templateId != null && templateId.isNotEmpty) {
+        formDataMap['templateId'] = templateId;
+      }
       if (date != null) formDataMap['date'] = date;
       if (notes != null && notes.isNotEmpty) formDataMap['notes'] = notes;
       if (latitude != null) formDataMap['latitude'] = latitude.toString();
@@ -91,7 +97,9 @@ class CheckpointService {
           'message': response.data['message'] ?? 'Checkpoint selesai',
         };
       } else {
-        throw Exception(response.data['message'] ?? 'Gagal menyelesaikan checkpoint');
+        throw Exception(
+          response.data['message'] ?? 'Gagal menyelesaikan checkpoint',
+        );
       }
     } catch (e) {
       debugPrint('[CheckpointService] Error: $e');

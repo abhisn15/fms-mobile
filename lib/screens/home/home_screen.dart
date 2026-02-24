@@ -9,6 +9,8 @@ import '../team/team_screen.dart';
 import '../incident_report/incident_report_screen.dart';
 import '../../widgets/offline_indicator.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/checkpoint_provider.dart';
+import '../../models/user_model.dart';
 import '../../services/global_update_checker.dart';
 import 'home_tab.dart';
 
@@ -28,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   AnimationController? _moreMenuController;
   Animation<Offset>? _moreMenuSlide;
   Animation<double>? _moreMenuFade;
+  String? _lastCheckpointUserId;
 
   // Helper untuk mendapatkan screens. Patroli hanya disertakan bila posisi mengandung kata kunci security.
   List<Widget> _getScreens(bool showPatroli) {
@@ -49,24 +52,75 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // Hanya 3 tab utama di bottom bar + Lainnya (buka sheet)
   List<_NavItemData> _getMainNavItems() {
     return [
-      _NavItemData(index: 0, icon: Icons.home_outlined, selectedIcon: Icons.home, label: 'Home'),
-      _NavItemData(index: 1, icon: Icons.calendar_today_outlined, selectedIcon: Icons.calendar_today, label: 'Absensi'),
-      _NavItemData(index: 2, icon: Icons.assignment_outlined, selectedIcon: Icons.assignment, label: 'Aktivitas'),
-      _NavItemData(index: -1, icon: Icons.apps_rounded, selectedIcon: Icons.apps, label: 'Lainnya'),
+      _NavItemData(
+        index: 0,
+        icon: Icons.home_outlined,
+        selectedIcon: Icons.home,
+        label: 'Home',
+      ),
+      _NavItemData(
+        index: 1,
+        icon: Icons.calendar_today_outlined,
+        selectedIcon: Icons.calendar_today,
+        label: 'Absensi',
+      ),
+      _NavItemData(
+        index: 2,
+        icon: Icons.assignment_outlined,
+        selectedIcon: Icons.assignment,
+        label: 'Aktivitas',
+      ),
+      _NavItemData(
+        index: -1,
+        icon: Icons.apps_rounded,
+        selectedIcon: Icons.apps,
+        label: 'Lainnya',
+      ),
     ];
   }
 
   // Item-item yang muncul di sheet "Lainnya". Patroli hanya muncul bila posisi mengandung kata kunci security.
   List<_NavItemData> _getMoreNavItems(bool showPatroli) {
     final items = [
-      _NavItemData(index: 3, icon: Icons.request_quote_outlined, selectedIcon: Icons.request_quote, label: 'Request'),
-      _NavItemData(index: 4, icon: Icons.report_outlined, selectedIcon: Icons.report, label: 'Laporan Kejadian'),
+      _NavItemData(
+        index: 3,
+        icon: Icons.request_quote_outlined,
+        selectedIcon: Icons.request_quote,
+        label: 'Request',
+      ),
+      _NavItemData(
+        index: 4,
+        icon: Icons.report_outlined,
+        selectedIcon: Icons.report,
+        label: 'Laporan Kejadian',
+      ),
     ];
     if (showPatroli) {
-      items.add(_NavItemData(index: 5, icon: Icons.security_outlined, selectedIcon: Icons.security, label: 'Patroli'));
+      items.add(
+        _NavItemData(
+          index: 5,
+          icon: Icons.security_outlined,
+          selectedIcon: Icons.security,
+          label: 'Patroli',
+        ),
+      );
     }
-    items.add(_NavItemData(index: showPatroli ? 6 : 5, icon: Icons.groups_outlined, selectedIcon: Icons.groups, label: 'Team'));
-    items.add(_NavItemData(index: showPatroli ? 7 : 6, icon: Icons.settings_outlined, selectedIcon: Icons.settings, label: 'Pengaturan'));
+    items.add(
+      _NavItemData(
+        index: showPatroli ? 6 : 5,
+        icon: Icons.groups_outlined,
+        selectedIcon: Icons.groups,
+        label: 'Team',
+      ),
+    );
+    items.add(
+      _NavItemData(
+        index: showPatroli ? 7 : 6,
+        icon: Icons.settings_outlined,
+        selectedIcon: Icons.settings,
+        label: 'Pengaturan',
+      ),
+    );
     return items;
   }
 
@@ -74,7 +128,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (_pageController == null) {
       _pageController = PageController(initialPage: 0);
     }
-    if (_animationControllers == null || _animationControllers!.length != screenCount) {
+    if (_animationControllers == null ||
+        _animationControllers!.length != screenCount) {
       if (_animationControllers != null) {
         for (var controller in _animationControllers!) {
           controller.dispose();
@@ -99,13 +154,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 320),
     );
-    _moreMenuSlide = Tween<Offset>(
-      begin: const Offset(0, 1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _moreMenuController!,
-      curve: Curves.easeOutCubic,
-    ));
+    _moreMenuSlide = Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _moreMenuController!,
+            curve: Curves.easeOutCubic,
+          ),
+        );
     _moreMenuFade = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _moreMenuController!, curve: Curves.easeOut),
     );
@@ -176,17 +231,44 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  /// Tampilkan menu Patroli hanya jika nama posisi mengandung kata kunci security/patroli.
-  /// Posisi seperti "Cleaning Service" tidak akan melihat Patroli.
-  static bool _showPatroliMenu(String? positionName) {
+  static bool _showPatroliMenu(User? user) {
+    if (user == null) return false;
+    final positionName = user.position?.name;
     if (positionName == null || positionName.trim().isEmpty) return false;
     final lower = positionName.toLowerCase();
+    // Patroli hanya untuk posisi security (bukan mengikuti flag checkpoint site).
     return lower.contains('security') ||
-        lower.contains('patroli') ||
         lower.contains('satpam') ||
         lower.contains('guard') ||
         lower.contains('penjaga') ||
         lower.contains('patrol');
+  }
+
+  void _bootstrapCheckpointForUser(User? user) {
+    final userId = user?.id;
+    if (userId == null) {
+      if (_lastCheckpointUserId != null) {
+        _lastCheckpointUserId = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Provider.of<CheckpointProvider>(context, listen: false).clear();
+        });
+      }
+      return;
+    }
+
+    if (_lastCheckpointUserId == userId) return;
+    _lastCheckpointUserId = userId;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final checkpointProvider = Provider.of<CheckpointProvider>(
+        context,
+        listen: false,
+      );
+      checkpointProvider.clear();
+      await checkpointProvider.loadCheckpoint(force: true);
+    });
   }
 
   @override
@@ -194,21 +276,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, _) {
         final user = authProvider.user;
-        final positionName = user?.position?.name ?? '';
-        final isSecurity = _showPatroliMenu(positionName);
-        
-        final screens = _getScreens(isSecurity);
+        _bootstrapCheckpointForUser(user);
+        final showPatroli = _showPatroliMenu(user);
+
+        final screens = _getScreens(showPatroli);
         final navItems = _getMainNavItems();
-        
+
+        if (_currentIndex >= screens.length) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            final safeIndex = screens.length - 1;
+            setState(() => _currentIndex = safeIndex);
+            _pageController?.jumpToPage(safeIndex);
+          });
+        }
+
         // Ensure controllers are initialized (for hot reload)
         _initializeControllers(screens.length);
-        
+
         if (_pageController == null || _animationControllers == null) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        
+
         return Stack(
           children: [
             Scaffold(
@@ -217,67 +308,77 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   const OfflineIndicator(),
                   Expanded(
                     child: PageView.builder(
-                  controller: _pageController!,
-                  onPageChanged: _onPageChanged,
-                  itemCount: screens.length,
-                  itemBuilder: (context, index) {
-                    final child = KeyedSubtree(
-                      key: ValueKey<int>(index),
-                      child: screens[index],
-                    );
-                    // Only animate the current page to avoid lifecycle assertion
-                    // when off-screen pages are deactivated during tab switch.
-                    if (index == _currentIndex) {
-                      return FadeTransition(
-                        opacity: _animationControllers![index],
-                        child: SlideTransition(
-                          position: Tween<Offset>(
-                            begin: const Offset(0.1, 0),
-                            end: Offset.zero,
-                          ).animate(CurvedAnimation(
-                            parent: _animationControllers![index],
-                            curve: Curves.easeOut,
-                          )),
-                          child: child,
-                        ),
-                      );
-                    }
-                    return RepaintBoundary(child: child);
-                  },
+                      controller: _pageController!,
+                      onPageChanged: _onPageChanged,
+                      itemCount: screens.length,
+                      itemBuilder: (context, index) {
+                        final child = KeyedSubtree(
+                          key: ValueKey<int>(index),
+                          child: screens[index],
+                        );
+                        // Only animate the current page to avoid lifecycle assertion
+                        // when off-screen pages are deactivated during tab switch.
+                        if (index == _currentIndex) {
+                          return FadeTransition(
+                            opacity: _animationControllers![index],
+                            child: SlideTransition(
+                              position:
+                                  Tween<Offset>(
+                                    begin: const Offset(0.1, 0),
+                                    end: Offset.zero,
+                                  ).animate(
+                                    CurvedAnimation(
+                                      parent: _animationControllers![index],
+                                      curve: Curves.easeOut,
+                                    ),
+                                  ),
+                              child: child,
+                            ),
+                          );
+                        }
+                        return RepaintBoundary(child: child);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              bottomNavigationBar: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: navItems
+                          .map(
+                            (item) => _buildNavItem(
+                              context,
+                              index: item.index,
+                              icon: item.icon,
+                              selectedIcon: item.selectedIcon,
+                              label: item.label,
+                              isSecurity: showPatroli,
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
                 ),
               ),
-            ],
-          ),
-          bottomNavigationBar: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, -2),
-                ),
-              ],
             ),
-            child: SafeArea(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: navItems.map((item) => _buildNavItem(
-                    context,
-                    index: item.index,
-                    icon: item.icon,
-                    selectedIcon: item.selectedIcon,
-                    label: item.label,
-                    isSecurity: isSecurity,
-                  )).toList(),
-                ),
-              ),
-            ),
-          ),
-            ),
-            if (_showMoreMenu) _buildMoreMenuOverlay(context, isSecurity),
+            if (_showMoreMenu) _buildMoreMenuOverlay(context, showPatroli),
           ],
         );
       },
@@ -306,8 +407,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   child: GestureDetector(
                     onTap: () {}, // prevent tap through to close
                     child: Container(
-                      margin: const EdgeInsets.only(bottom: 70, left: 20, right: 20),
-                      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                      margin: const EdgeInsets.only(
+                        bottom: 70,
+                        left: 20,
+                        right: 20,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 24,
+                        horizontal: 16,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(24),
@@ -329,7 +437,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             color: Colors.transparent,
                             child: InkWell(
                               onTap: () => _selectMoreItem(item.index),
-                              borderRadius: BorderRadius.circular(iconSize / 2 + borderWidth),
+                              borderRadius: BorderRadius.circular(
+                                iconSize / 2 + borderWidth,
+                              ),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -342,15 +452,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                           ? primaryColor.withOpacity(0.12)
                                           : Colors.grey[50],
                                       border: Border.all(
-                                        color: isSelected ? primaryColor : Colors.grey[300]!,
+                                        color: isSelected
+                                            ? primaryColor
+                                            : Colors.grey[300]!,
                                         width: borderWidth,
                                       ),
                                     ),
                                     child: Center(
                                       child: Icon(
-                                        isSelected ? item.selectedIcon : item.icon,
+                                        isSelected
+                                            ? item.selectedIcon
+                                            : item.icon,
                                         size: 28,
-                                        color: isSelected ? primaryColor : Colors.grey[700],
+                                        color: isSelected
+                                            ? primaryColor
+                                            : Colors.grey[700],
                                       ),
                                     ),
                                   ),
@@ -364,8 +480,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontSize: 11,
-                                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                                        color: isSelected ? primaryColor : Colors.grey[700],
+                                        fontWeight: isSelected
+                                            ? FontWeight.w600
+                                            : FontWeight.w500,
+                                        color: isSelected
+                                            ? primaryColor
+                                            : Colors.grey[700],
                                       ),
                                     ),
                                   ),
@@ -397,7 +517,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final isLainnya = index == -1;
     final isSelected = !isLainnya && _currentIndex == index;
     const primaryColor = Color(0xFF1E88E5);
-    
+
     return Expanded(
       child: GestureDetector(
         onTap: () {
@@ -417,12 +537,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: isSelected ? primaryColor.withOpacity(0.15) : (isLainnya ? Colors.grey[100] : Colors.transparent),
+                  color: isSelected
+                      ? primaryColor.withOpacity(0.15)
+                      : (isLainnya ? Colors.grey[100] : Colors.transparent),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   isSelected || isLainnya ? selectedIcon : icon,
-                  color: isSelected ? primaryColor : (isLainnya ? Colors.grey[600] : Colors.grey[600]),
+                  color: isSelected
+                      ? primaryColor
+                      : (isLainnya ? Colors.grey[600] : Colors.grey[600]),
                   size: 22,
                 ),
               ),

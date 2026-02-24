@@ -7,6 +7,7 @@ class AttendanceRecord {
   final String status; // present, late, absent, leave, sick, remote
   final String? checkIn;
   final String? checkOut;
+  final String? originalCheckInDate;
   final String? shiftId;
   final String? notes;
   final String? photoUrl; // Deprecated: use checkInPhotoUrl and checkOutPhotoUrl instead
@@ -25,6 +26,7 @@ class AttendanceRecord {
     required this.status,
     this.checkIn,
     this.checkOut,
+    this.originalCheckInDate,
     this.shiftId,
     this.notes,
     this.photoUrl,
@@ -45,6 +47,7 @@ class AttendanceRecord {
       status: json['status'] as String? ?? 'absent',
       checkIn: json['checkIn'] as String?,
       checkOut: json['checkOut'] as String?,
+      originalCheckInDate: json['originalCheckInDate'] as String?,
       shiftId: json['shiftId'] as String?,
       notes: json['notes'] as String?,
       photoUrl: json['photoUrl'] as String?, // Keep for backward compatibility
@@ -72,6 +75,7 @@ class AttendanceRecord {
       'status': status,
       'checkIn': checkIn,
       'checkOut': checkOut,
+      'originalCheckInDate': originalCheckInDate,
       'shiftId': shiftId,
       'notes': notes,
       'photoUrl': photoUrl, // Keep for backward compatibility

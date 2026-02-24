@@ -80,7 +80,7 @@ class PersistentNotificationService {
     }
 
     final checkInTime = _formatTime(todayRecord.checkIn);
-    final duration = _calculateDuration(todayRecord.checkIn);
+    final duration = _calculateDuration(todayRecord);
     final shiftLabel = _buildShiftLabel(_currentShift);
     final checkoutLabel = _buildShiftCheckoutLabel(todayRecord, _currentShift);
     final reminderLine = _buildCheckoutReminderLine(todayRecord, _currentShift);
@@ -194,7 +194,8 @@ class PersistentNotificationService {
   }
 
   /// Calculate duration since check-in
-  static String _calculateDuration(String? checkInTime) {
+  static String _calculateDuration(AttendanceRecord record) {
+    final checkInTime = record.checkIn;
     if (checkInTime == null) return 'Unknown';
 
     try {
@@ -205,14 +206,25 @@ class PersistentNotificationService {
         // ISO format or full date format
         checkIn = DateTime.parse(checkInTime);
       } else if (checkInTime.contains(':')) {
-        // HH:MM format - handle overnight shift
+        // HH:MM format - use original check-in date when provided by backend
         final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
+        DateTime baseDate;
+        try {
+          final rawDate =
+              (record.originalCheckInDate != null &&
+                  record.originalCheckInDate!.trim().isNotEmpty)
+              ? record.originalCheckInDate!
+              : record.date;
+          final parsedDate = DateTime.parse(rawDate);
+          baseDate = DateTime(parsedDate.year, parsedDate.month, parsedDate.day);
+        } catch (_) {
+          baseDate = DateTime(now.year, now.month, now.day);
+        }
         final timeParts = checkInTime.split(':');
         if (timeParts.length >= 2) {
           final hour = int.tryParse(timeParts[0]) ?? 0;
           final minute = int.tryParse(timeParts[1]) ?? 0;
-          checkIn = DateTime(today.year, today.month, today.day, hour, minute);
+          checkIn = DateTime(baseDate.year, baseDate.month, baseDate.day, hour, minute);
           
           // Handle overnight shift only for early morning + late check-in time
           // Avoid false 23h duration when device/server time slightly out of sync
@@ -320,7 +332,9 @@ class PersistentNotificationService {
       if (raw.contains('T') || raw.contains('-')) {
         return DateTime.parse(raw);
       }
-      final recordDate = _parseRecordDate(record.date) ?? DateTime.now();
+      final recordDate = _parseRecordDate(record.originalCheckInDate) ??
+          _parseRecordDate(record.date) ??
+          DateTime.now();
       final parts = raw.split(':');
       if (parts.length >= 2) {
         final hour = int.tryParse(parts[0]) ?? 0;
@@ -376,7 +390,8 @@ class PersistentNotificationService {
     if (shift == null) return null;
     final endMinutes = _parseTimeToMinutes(shift.endTime);
     if (endMinutes == null) return null;
-    final baseDate = _parseRecordDate(record.date) ??
+    final baseDate = _parseRecordDate(record.originalCheckInDate) ??
+        _parseRecordDate(record.date) ??
         _parseCheckInDateTime(record) ??
         DateTime.now();
     final endHour = endMinutes ~/ 60;

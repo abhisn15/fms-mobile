@@ -5,6 +5,7 @@ import '../models/shift_model.dart';
 import '../models/shift_assignment_model.dart';
 import '../models/attendance_model.dart';
 import '../models/team_task_model.dart';
+import '../models/leader_checkpoint_model.dart';
 
 class TeamServiceException implements Exception {
   final String message;
@@ -398,35 +399,83 @@ class TeamService {
     String? status,
     int page = 1,
     int limit = 50,
+    bool fetchAll = false,
   }) async {
-    final response = await _apiService.get(
-      ApiConfig.essTasks,
-      queryParameters: {
-        if (status != null && status.isNotEmpty) 'status': status,
-        'page': page,
-        'limit': limit,
-      },
-    );
-
-    if (response.statusCode != 200) {
-      throw TeamServiceException(
-        response.data?['message']?.toString() ?? 'Gagal memuat tugas Anda',
-        statusCode: response.statusCode,
+    final all = <TeamTask>[];
+    var currentPage = page;
+    while (true) {
+      final response = await _apiService.get(
+        ApiConfig.essTasks,
+        queryParameters: {
+          if (status != null && status.isNotEmpty) 'status': status,
+          'page': currentPage,
+          'limit': limit,
+        },
       );
+
+      if (response.statusCode != 200) {
+        throw TeamServiceException(
+          response.data?['message']?.toString() ?? 'Gagal memuat tugas Anda',
+          statusCode: response.statusCode,
+        );
+      }
+
+      final raw = response.data?['data'];
+      if (raw is! List || raw.isEmpty) break;
+      final mapped = raw
+          .where((e) => e is Map)
+          .map((e) => TeamTask.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      all.addAll(mapped);
+
+      if (!fetchAll || mapped.length < limit) break;
+      currentPage += 1;
     }
 
-    final raw = response.data?['data'];
-    if (raw is! List) return [];
-    return raw
-        .where((e) => e is Map)
-        .map((e) => TeamTask.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+    return all;
   }
 
-  Future<TeamTask> updateMyTaskStatus(String taskId, String status) async {
+  Future<List<TeamTask>> getMyOpenTasks({int limit = 100}) async {
+    final open = await Future.wait([
+      getMyTasks(status: 'todo', limit: limit, fetchAll: true),
+      getMyTasks(status: 'in_progress', limit: limit, fetchAll: true),
+    ]);
+
+    final byId = <String, TeamTask>{};
+    for (final list in open) {
+      for (final task in list) {
+        byId[task.id] = task;
+      }
+    }
+
+    final merged = byId.values.toList();
+    merged.sort((a, b) {
+      final aDue = a.dueDate;
+      final bDue = b.dueDate;
+      if (aDue == null && bDue == null) {
+        return b.createdAt.compareTo(a.createdAt);
+      }
+      if (aDue == null) return 1;
+      if (bDue == null) return -1;
+      final dueCompare = aDue.compareTo(bDue);
+      if (dueCompare != 0) return dueCompare;
+      return b.createdAt.compareTo(a.createdAt);
+    });
+    return merged;
+  }
+
+  Future<TeamTask> updateMyTaskStatus(
+    String taskId,
+    String status, {
+    String? proofActivityId,
+  }) async {
     final response = await _apiService.patch(
       '${ApiConfig.essTasks}/$taskId',
-      data: {'status': status},
+      data: {
+        'status': status,
+        if (proofActivityId != null && proofActivityId.isNotEmpty)
+          'proofActivityId': proofActivityId,
+      },
     );
 
     if (response.statusCode != 200) {
@@ -442,5 +491,120 @@ class TeamService {
       throw TeamServiceException('Respons tugas tidak valid');
     }
     return TeamTask.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  Future<List<LeaderCheckpointTemplateOption>> getLeaderCheckpointTemplates({
+    String? search,
+    int page = 1,
+    int limit = 100,
+  }) async {
+    final response = await _apiService.get(
+      ApiConfig.leaderCheckpointTemplates,
+      queryParameters: {
+        if (search != null && search.isNotEmpty) 'search': search,
+        'page': page,
+        'limit': limit,
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw TeamServiceException(
+        response.data?['message']?.toString() ??
+            'Gagal memuat template checkpoint',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final payload = response.data?['data'];
+    final rawTemplates = payload is Map ? payload['templates'] : null;
+    if (rawTemplates is! List) return [];
+
+    return rawTemplates
+        .whereType<Map>()
+        .map(
+          (entry) => LeaderCheckpointTemplateOption.fromJson(
+            Map<String, dynamic>.from(entry),
+          ),
+        )
+        .toList();
+  }
+
+  Future<LeaderCheckpointMonitoringResult> getLeaderCheckpointMonitoring({
+    required DateTime date,
+    String? search,
+    int page = 1,
+    int limit = 250,
+  }) async {
+    final year = date.year.toString().padLeft(4, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    final dateText = '$year-$month-$day';
+
+    final response = await _apiService.get(
+      ApiConfig.leaderCheckpointProgress,
+      queryParameters: {
+        'date': dateText,
+        if (search != null && search.isNotEmpty) 'search': search,
+        'page': page,
+        'limit': limit,
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw TeamServiceException(
+        response.data?['message']?.toString() ??
+            'Gagal memuat monitoring checkpoint',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final payload = response.data?['data'];
+    if (payload is! Map<String, dynamic>) {
+      return LeaderCheckpointMonitoringResult.fromJson(const {
+        'items': [],
+        'pagination': {'page': 1, 'limit': 50, 'total': 0, 'totalPages': 1},
+      });
+    }
+
+    return LeaderCheckpointMonitoringResult.fromJson(payload);
+  }
+
+  Future<void> createLeaderCheckpointAssignment({
+    required String templateId,
+    required List<String> userIds,
+    required DateTime date,
+  }) async {
+    final cleanedUserIds = userIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    if (cleanedUserIds.isEmpty) {
+      throw TeamServiceException('Pilih minimal 1 karyawan');
+    }
+
+    final year = date.year.toString().padLeft(4, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    final dateText = '$year-$month-$day';
+
+    final response = await _apiService.post(
+      ApiConfig.leaderCheckpointAssignments,
+      data: {
+        'templateId': templateId,
+        'userIds': cleanedUserIds,
+        'startDate': dateText,
+        'endDate': dateText,
+        'scheduleType': 'daily',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw TeamServiceException(
+        response.data?['message']?.toString() ??
+            'Gagal menambah tugas checkpoint',
+        statusCode: response.statusCode,
+      );
+    }
   }
 }

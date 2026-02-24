@@ -61,6 +61,7 @@ class ActivityService {
     String? notes,
     List<File> photos = const [],
     String? date,
+    bool taskEvidence = false,
   }) async {
     try {
       // Prepare form data - hanya summary dan foto
@@ -68,6 +69,7 @@ class ActivityService {
         'summary': summary,
         'type': 'daily', // Explicitly set type
         'activityType': activityType,
+        'taskEvidence': taskEvidence ? 'true' : 'false',
         if (date != null) 'date': date,
         if (notes != null) 'notes': notes,
       };

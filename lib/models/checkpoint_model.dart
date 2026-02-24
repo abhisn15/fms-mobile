@@ -5,6 +5,7 @@ class CheckpointTemplateItem {
   final String name;
   final int order;
   final bool requiresPhoto;
+
   /// Jika true, karyawan bisa upload banyak foto before/after; jika false hanya 1 before & 1 after.
   final bool allowMultiplePhotos;
   final String? description;
@@ -59,11 +60,12 @@ class CheckpointTemplate {
     final itemsRaw = json['items'];
     List<CheckpointTemplateItem> items = [];
     if (itemsRaw is List) {
-      items = itemsRaw
-          .whereType<Map<String, dynamic>>()
-          .map((e) => CheckpointTemplateItem.fromJson(e))
-          .toList()
-        ..sort((a, b) => a.order.compareTo(b.order));
+      items =
+          itemsRaw
+              .whereType<Map<String, dynamic>>()
+              .map((e) => CheckpointTemplateItem.fromJson(e))
+              .toList()
+            ..sort((a, b) => a.order.compareTo(b.order));
     }
 
     return CheckpointTemplate(
@@ -113,13 +115,15 @@ class CheckpointProgressItem {
   });
 
   List<String> get beforePhotoUrls {
-    if (photoBeforeUrls != null && photoBeforeUrls!.isNotEmpty) return photoBeforeUrls!;
+    if (photoBeforeUrls != null && photoBeforeUrls!.isNotEmpty)
+      return photoBeforeUrls!;
     if (photoBeforeUrl != null) return [photoBeforeUrl!];
     return [];
   }
 
   List<String> get afterPhotoUrls {
-    if (photoAfterUrls != null && photoAfterUrls!.isNotEmpty) return photoAfterUrls!;
+    if (photoAfterUrls != null && photoAfterUrls!.isNotEmpty)
+      return photoAfterUrls!;
     if (photoAfterUrl != null) return [photoAfterUrl!];
     return [];
   }
@@ -128,7 +132,9 @@ class CheckpointProgressItem {
     List<String>? beforeUrls;
     List<String>? afterUrls;
     if (json['photoBeforeUrls'] is List) {
-      beforeUrls = (json['photoBeforeUrls'] as List).whereType<String>().toList();
+      beforeUrls = (json['photoBeforeUrls'] as List)
+          .whereType<String>()
+          .toList();
     }
     if (json['photoAfterUrls'] is List) {
       afterUrls = (json['photoAfterUrls'] as List).whereType<String>().toList();
@@ -144,9 +150,15 @@ class CheckpointProgressItem {
       photoBeforeUrls: beforeUrls,
       photoAfterUrls: afterUrls,
       notes: json['notes'] as String?,
-      latitude: json['latitude'] is num ? (json['latitude'] as num).toDouble() : null,
-      longitude: json['longitude'] is num ? (json['longitude'] as num).toDouble() : null,
-      accuracy: json['accuracy'] is num ? (json['accuracy'] as num).toDouble() : null,
+      latitude: json['latitude'] is num
+          ? (json['latitude'] as num).toDouble()
+          : null,
+      longitude: json['longitude'] is num
+          ? (json['longitude'] as num).toDouble()
+          : null,
+      accuracy: json['accuracy'] is num
+          ? (json['accuracy'] as num).toDouble()
+          : null,
     );
   }
 
@@ -169,12 +181,67 @@ class CheckpointProgressItem {
   }
 }
 
+class EssCheckpointTemplateState {
+  final String assignmentId;
+  final CheckpointTemplate template;
+  final List<CheckpointProgressItem> progress;
+  final String? activityId;
+
+  EssCheckpointTemplateState({
+    required this.assignmentId,
+    required this.template,
+    required this.progress,
+    this.activityId,
+  });
+
+  int get completedCount => progress.where((p) => p.completed).length;
+  int get totalCount => progress.length;
+  double get percentage => totalCount > 0 ? completedCount / totalCount : 0;
+
+  factory EssCheckpointTemplateState.fromJson(Map<String, dynamic> json) {
+    final templateJson = json['template'] is Map<String, dynamic>
+        ? json['template'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final progressRaw = json['progress'];
+    final progress = (progressRaw is List)
+        ? ((progressRaw
+                .whereType<Map<String, dynamic>>()
+                .map((e) => CheckpointProgressItem.fromJson(e))
+                .toList())
+            ..sort((a, b) => a.order.compareTo(b.order)))
+        : <CheckpointProgressItem>[];
+
+    return EssCheckpointTemplateState(
+      assignmentId: json['assignmentId'] as String? ?? '',
+      template: CheckpointTemplate.fromJson(templateJson),
+      progress: progress,
+      activityId: json['activityId'] as String?,
+    );
+  }
+
+  EssCheckpointTemplateState copyWith({
+    String? assignmentId,
+    CheckpointTemplate? template,
+    List<CheckpointProgressItem>? progress,
+    String? activityId,
+  }) {
+    return EssCheckpointTemplateState(
+      assignmentId: assignmentId ?? this.assignmentId,
+      template: template ?? this.template,
+      progress: progress ?? this.progress,
+      activityId: activityId ?? this.activityId,
+    );
+  }
+}
+
 class EssCheckpointPayload {
   final bool hasCheckpoint;
   final CheckpointTemplate? template;
   final String? assignmentId;
   final List<CheckpointProgressItem>? progress;
   final String? activityId;
+  final List<EssCheckpointTemplateState> templates;
+  final int totalTemplates;
 
   EssCheckpointPayload({
     required this.hasCheckpoint,
@@ -182,30 +249,76 @@ class EssCheckpointPayload {
     this.assignmentId,
     this.progress,
     this.activityId,
+    this.templates = const [],
+    this.totalTemplates = 0,
   });
 
-  int get completedCount => progress?.where((p) => p.completed).length ?? 0;
-  int get totalCount => progress?.length ?? 0;
+  int get completedCount {
+    if (templates.isNotEmpty) {
+      return templates.fold(0, (sum, state) => sum + state.completedCount);
+    }
+    return progress?.where((p) => p.completed).length ?? 0;
+  }
+
+  int get totalCount {
+    if (templates.isNotEmpty) {
+      return templates.fold(0, (sum, state) => sum + state.totalCount);
+    }
+    return progress?.length ?? 0;
+  }
+
   double get percentage => totalCount > 0 ? completedCount / totalCount : 0;
 
   factory EssCheckpointPayload.fromJson(Map<String, dynamic> json) {
-    List<CheckpointProgressItem>? progress;
+    List<CheckpointProgressItem>? legacyProgress;
     if (json['progress'] is List) {
-      progress = (json['progress'] as List)
-          .whereType<Map<String, dynamic>>()
-          .map((e) => CheckpointProgressItem.fromJson(e))
-          .toList()
-        ..sort((a, b) => a.order.compareTo(b.order));
+      legacyProgress =
+          (json['progress'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map((e) => CheckpointProgressItem.fromJson(e))
+              .toList()
+            ..sort((a, b) => a.order.compareTo(b.order));
     }
+
+    final legacyTemplate = json['template'] is Map<String, dynamic>
+        ? CheckpointTemplate.fromJson(json['template'] as Map<String, dynamic>)
+        : null;
+
+    final templatesRaw = json['templates'];
+    final templates = (templatesRaw is List)
+        ? templatesRaw
+              .whereType<Map<String, dynamic>>()
+              .map((entry) => EssCheckpointTemplateState.fromJson(entry))
+              .where((entry) => entry.template.id.isNotEmpty)
+              .toList()
+        : <EssCheckpointTemplateState>[];
+
+    if (templates.isEmpty && legacyTemplate != null) {
+      templates.add(
+        EssCheckpointTemplateState(
+          assignmentId: json['assignmentId'] as String? ?? '',
+          template: legacyTemplate,
+          progress: legacyProgress ?? const [],
+          activityId: json['activityId'] as String?,
+        ),
+      );
+    }
+
+    final primaryState = templates.isNotEmpty ? templates.first : null;
+    final parsedTotalTemplates = json['totalTemplates'];
+    final totalTemplates = parsedTotalTemplates is int
+        ? parsedTotalTemplates
+        : templates.length;
 
     return EssCheckpointPayload(
       hasCheckpoint: json['hasCheckpoint'] == true,
-      template: json['template'] is Map<String, dynamic>
-          ? CheckpointTemplate.fromJson(json['template'] as Map<String, dynamic>)
-          : null,
-      assignmentId: json['assignmentId'] as String?,
-      progress: progress,
-      activityId: json['activityId'] as String?,
+      template: primaryState?.template ?? legacyTemplate,
+      assignmentId:
+          primaryState?.assignmentId ?? (json['assignmentId'] as String?),
+      progress: primaryState?.progress ?? legacyProgress,
+      activityId: primaryState?.activityId ?? (json['activityId'] as String?),
+      templates: templates,
+      totalTemplates: totalTemplates,
     );
   }
 }

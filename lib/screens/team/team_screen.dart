@@ -7,6 +7,7 @@ import '../../models/shift_model.dart';
 import '../../models/team_model.dart';
 import '../../providers/auth_provider.dart';
 import 'team_tasks_screen.dart';
+import 'leader_checkpoint_tasks_screen.dart';
 import '../../services/team_service.dart';
 import '../../widgets/shimmer_loading.dart';
 
@@ -450,23 +451,54 @@ class _TeamScreenState extends State<TeamScreen> {
     return dates;
   }
 
-  void _openTeamTasksScreen() {
+  void _openLeaderCheckpointTasksScreen() {
     final membersByTeam = <String, List<TeamMember>>{};
+    membersByTeam.addAll(_leaderMembersByTeam);
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LeaderCheckpointTasksScreen(
+          teams: _leaderTeams,
+          membersByTeam: membersByTeam,
+          initialTeamId: _manageTeamId,
+        ),
+      ),
+    );
+  }
+
+  void _openLeaderManualTasksScreen() {
+    final membersByTeam = <String, List<TeamMember>>{};
+    membersByTeam.addAll(_leaderMembersByTeam);
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TeamTasksScreen(
+          isLeader: true,
+          teams: _leaderTeams,
+          membersByTeam: membersByTeam,
+          initialTeamId: _manageTeamId,
+        ),
+      ),
+    );
+  }
+
+  void _openTeamTasksScreen() {
     if (_isLeader) {
-      membersByTeam.addAll(_leaderMembersByTeam);
-    } else {
-      for (final team in _myTeams) {
-        membersByTeam[team.id] = team.members;
-      }
+      _openLeaderManualTasksScreen();
+      return;
+    }
+    final membersByTeam = <String, List<TeamMember>>{};
+    for (final team in _myTeams) {
+      membersByTeam[team.id] = team.members;
     }
 
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TeamTasksScreen(
-          isLeader: _isLeader,
-          teams: _isLeader ? _leaderTeams : _myTeams,
+          isLeader: false,
+          teams: _myTeams,
           membersByTeam: membersByTeam,
-          initialTeamId: _isLeader ? _manageTeamId : _selectedTeamId,
+          initialTeamId: _selectedTeamId,
         ),
       ),
     );
@@ -518,14 +550,36 @@ class _TeamScreenState extends State<TeamScreen> {
               if (_isLeader)
                 _buildSectionCard(
                   title: 'Tugas Team',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _leaderTeams.isEmpty
+                            ? null
+                            : _openLeaderCheckpointTasksScreen,
+                        icon: const Icon(Icons.assignment_outlined),
+                        label: const Text('Monitoring Checkpoint Anggota'),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: _leaderTeams.isEmpty
+                            ? null
+                            : _openLeaderManualTasksScreen,
+                        icon: const Icon(Icons.playlist_add_check),
+                        label: const Text('Tambah Tugas Manual Anggota'),
+                      ),
+                    ],
+                  ),
+                ),
+              if (!_isLeader)
+                _buildSectionCard(
+                  title: 'Tugas Team',
                   child: SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: _leaderTeams.isEmpty
-                          ? null
-                          : _openTeamTasksScreen,
+                      onPressed: _myTeams.isEmpty ? null : _openTeamTasksScreen,
                       icon: const Icon(Icons.assignment_outlined),
-                      label: const Text('Kelola Tugas Anggota'),
+                      label: const Text('Lihat Tugas Saya'),
                     ),
                   ),
                 ),

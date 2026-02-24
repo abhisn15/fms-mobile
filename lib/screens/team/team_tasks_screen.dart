@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'dart:io';
 
 import '../../models/team_model.dart';
 import '../../models/team_task_model.dart';
 import '../../services/team_service.dart';
+import '../../services/activity_service.dart';
+import '../../config/api_config.dart';
+import '../camera/camera_screen.dart';
 
 class TeamTasksScreen extends StatefulWidget {
   final bool isLeader;
@@ -25,6 +29,7 @@ class TeamTasksScreen extends StatefulWidget {
 
 class _TeamTasksScreenState extends State<TeamTasksScreen> {
   final TeamService _teamService = TeamService();
+  final ActivityService _activityService = ActivityService();
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
 
@@ -36,6 +41,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
   String? _selectedAssigneeId;
   DateTime? _dueDate;
   List<TeamTask> _tasks = [];
+  final Map<String, List<String>> _taskProofPhotos = {};
 
   static const Map<String, String> _statusLabel = {
     'todo': 'To Do',
@@ -101,6 +107,13 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
       setState(() {
         _tasks = tasks;
       });
+      if (!widget.isLeader) {
+        await _loadTaskProofPhotos(tasks);
+      } else if (_taskProofPhotos.isNotEmpty) {
+        setState(() {
+          _taskProofPhotos.clear();
+        });
+      }
     } on TeamServiceException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -118,6 +131,93 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
         });
       }
     }
+  }
+
+  String? _extractTaskIdFromSummary(String summary) {
+    final match = RegExp(r'\[TASK:([^\]]+)\]', caseSensitive: false).firstMatch(summary.trim());
+    if (match == null) return null;
+    final id = (match.group(1) ?? '').trim();
+    return id.isEmpty ? null : id;
+  }
+
+  Future<File?> _pickProofPhoto() async {
+    final result = await Navigator.of(context).push<File>(
+      MaterialPageRoute(
+        builder: (_) => const CameraScreen(
+          title: 'Bukti Tugas',
+          allowGallery: true,
+          preferLowResolution: true,
+        ),
+      ),
+    );
+    return result;
+  }
+
+  Future<void> _loadTaskProofPhotos(List<TeamTask> tasks) async {
+    final taskIds = tasks.map((task) => task.id).toSet();
+    if (taskIds.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _taskProofPhotos.clear();
+      });
+      return;
+    }
+
+    try {
+      final payload = await _activityService.getActivities();
+      final activities = <dynamic>[
+        if (payload.today != null) payload.today!,
+        ...payload.recent,
+      ];
+
+      final nextProofMap = <String, List<String>>{};
+      for (final entry in activities) {
+        final taskId = _extractTaskIdFromSummary(entry.summary);
+        if (taskId == null || !taskIds.contains(taskId)) continue;
+        final photos = (entry.photoUrls ?? [])
+            .where((url) => url.trim().isNotEmpty)
+            .toList();
+        if (photos.isEmpty) continue;
+        final existing = nextProofMap[taskId] ?? <String>[];
+        for (final photo in photos) {
+          if (!existing.contains(photo)) {
+            existing.add(photo);
+          }
+        }
+        nextProofMap[taskId] = existing;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _taskProofPhotos
+          ..clear()
+          ..addAll(nextProofMap);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _taskProofPhotos.clear();
+      });
+    }
+  }
+
+  void _showProofPreview(String imageUrl) {
+    final fullUrl = ApiConfig.getImageUrl(imageUrl);
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: InteractiveViewer(
+          child: Image.network(
+            fullUrl,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) => const SizedBox(
+              height: 220,
+              child: Center(child: Text('Gagal memuat foto')),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _pickDueDate() async {
@@ -187,11 +287,22 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
 
   Future<void> _updateTaskStatus(TeamTask task, String status) async {
     if (status == task.status) return;
+    String? proofActivityId;
+
+    if (!widget.isLeader && status == 'done') {
+      proofActivityId = await _submitTaskCompletionEvidence(task);
+      if (proofActivityId == null || proofActivityId.isEmpty) return;
+    }
+
     try {
       if (widget.isLeader) {
         await _teamService.updateLeaderTask(task.id, status: status);
       } else {
-        await _teamService.updateMyTaskStatus(task.id, status);
+        await _teamService.updateMyTaskStatus(
+          task.id,
+          status,
+          proofActivityId: proofActivityId,
+        );
       }
       if (!mounted) return;
       _showSnack('Status tugas diperbarui');
@@ -201,6 +312,200 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
     } catch (e) {
       _showSnack(e.toString().replaceAll('Exception: ', ''), isError: true);
     }
+  }
+
+  Future<String?> _submitTaskCompletionEvidence(TeamTask task) async {
+    final noteController = TextEditingController();
+    final pickedPhotos = <File>[];
+    bool submitting = false;
+    String? resultActivityId;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !submitting,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            Future<void> pickPhotos() async {
+              final photo = await _pickProofPhoto();
+              if (photo == null) return;
+              setModalState(() {
+                pickedPhotos.add(photo);
+              });
+            }
+
+            return AlertDialog(
+              title: const Text('Bukti Penyelesaian Tugas'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      task.title,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: noteController,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Catatan penyelesaian (opsional)',
+                        hintText:
+                            'Contoh: area sudah dibersihkan sesuai instruksi',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Foto bukti (${pickedPhotos.length})',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: submitting ? null : pickPhotos,
+                          icon: const Icon(Icons.camera_alt_outlined),
+                          label: const Text('Ambil Foto'),
+                        ),
+                      ],
+                    ),
+                    if (pickedPhotos.isEmpty)
+                      Text(
+                        'Wajib upload minimal 1 foto untuk menandai tugas selesai.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.red.shade600,
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: pickedPhotos.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final photo = entry.value;
+                          return Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.file(
+                                  photo,
+                                  width: 72,
+                                  height: 72,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                right: 0,
+                                top: 0,
+                                child: GestureDetector(
+                                  onTap: submitting
+                                      ? null
+                                      : () {
+                                          setModalState(() {
+                                            pickedPhotos.removeAt(index);
+                                          });
+                                        },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.black54,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.close,
+                                      size: 12,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: submitting
+                      ? null
+                      : () {
+                          resultActivityId = null;
+                          Navigator.of(dialogContext).pop();
+                        },
+                  child: const Text('Batal'),
+                ),
+                FilledButton(
+                  onPressed: submitting
+                      ? null
+                      : () async {
+                          if (pickedPhotos.isEmpty) {
+                            _showSnack(
+                              'Upload minimal 1 foto bukti dulu',
+                              isError: true,
+                            );
+                            return;
+                          }
+
+                          setModalState(() {
+                            submitting = true;
+                          });
+
+                          final photos = List<File>.from(pickedPhotos);
+                          final notes = noteController.text.trim();
+                          final activityResult = await _activityService
+                              .submitDailyActivity(
+                                summary:
+                                    '[TASK:${task.id}] Penyelesaian tugas: ${task.title}',
+                                activityType: 'normal',
+                                notes: notes.isEmpty ? null : notes,
+                                photos: photos,
+                                taskEvidence: true,
+                              );
+
+                          if (activityResult['success'] != true) {
+                            if (!mounted) return;
+                            _showSnack(
+                              activityResult['message']?.toString() ??
+                                  'Gagal upload bukti tugas',
+                              isError: true,
+                            );
+                            setModalState(() {
+                              submitting = false;
+                            });
+                            return;
+                          }
+
+                          final activityData = activityResult['data'];
+                          if (activityData is Map &&
+                              activityData['id'] != null) {
+                            resultActivityId = activityData['id'].toString();
+                          } else {
+                            resultActivityId = '';
+                          }
+                          if (dialogContext.mounted) {
+                            Navigator.of(dialogContext).pop();
+                          }
+                        },
+                  child: Text(submitting ? 'Mengirim...' : 'Kirim Bukti'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    noteController.dispose();
+    return resultActivityId;
   }
 
   Future<void> _deleteTask(TeamTask task) async {
@@ -497,6 +802,58 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                         Text('Assignee: ${task.assignee?.name ?? '-'}'),
                         Text('Dibuat oleh: ${task.createdBy?.name ?? '-'}'),
                         Text('Deadline: $dueText'),
+                        if (!widget.isLeader && task.status == 'done') ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Bukti Foto:',
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          if ((_taskProofPhotos[task.id] ?? []).isEmpty)
+                            Text(
+                              'Belum ada foto bukti terhubung',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 11,
+                              ),
+                            )
+                          else
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: (_taskProofPhotos[task.id] ?? [])
+                                  .take(4)
+                                  .map(
+                                    (photoUrl) => GestureDetector(
+                                      onTap: () => _showProofPreview(photoUrl),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          ApiConfig.getImageUrl(photoUrl),
+                                          width: 72,
+                                          height: 72,
+                                          fit: BoxFit.cover,
+                                          errorBuilder:
+                                              (context, error, stackTrace) =>
+                                                  Container(
+                                                    width: 72,
+                                                    height: 72,
+                                                    color: Colors.grey.shade200,
+                                                    child: const Icon(
+                                                      Icons.broken_image,
+                                                    ),
+                                                  ),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                        ],
                         const SizedBox(height: 10),
                         Wrap(
                           spacing: 8,
@@ -505,7 +862,7 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                             ...[
                               'todo',
                               'in_progress',
-                              'done',
+                              if (widget.isLeader) 'done',
                               if (widget.isLeader) 'cancelled',
                             ].map(
                               (status) => OutlinedButton(
@@ -514,6 +871,13 @@ class _TeamTasksScreenState extends State<TeamTasksScreen> {
                                 child: Text(_statusLabel[status] ?? status),
                               ),
                             ),
+                            if (!widget.isLeader && task.status != 'done')
+                              FilledButton.icon(
+                                onPressed: () =>
+                                    _updateTaskStatus(task, 'done'),
+                                icon: const Icon(Icons.cloud_upload_outlined),
+                                label: const Text('Submit Bukti & Selesai'),
+                              ),
                             if (widget.isLeader)
                               OutlinedButton.icon(
                                 onPressed: () => _deleteTask(task),

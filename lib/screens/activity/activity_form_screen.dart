@@ -7,13 +7,12 @@ import '../../providers/activity_provider.dart';
 import '../../screens/camera/camera_screen.dart';
 import '../../config/api_config.dart';
 import '../../utils/toast_helper.dart';
-import '../../models/checkpoint_model.dart';
 import '../../providers/checkpoint_provider.dart';
 import '../../widgets/checkpoint_timeline_widget.dart';
 
 class ActivityFormScreen extends StatefulWidget {
   final String? activityId; // If provided, edit mode; otherwise, create mode
-  
+
   const ActivityFormScreen({super.key, this.activityId});
 
   @override
@@ -26,6 +25,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
   List<File> _selectedPhotos = [];
   List<String> _existingPhotoUrls = []; // For edit mode
   bool _isLoadingActivity = false;
+  bool _isLoadingCheckpointMode = false;
   String _activityType = 'normal';
 
   @override
@@ -35,11 +35,32 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadActivity();
       });
+    } else {
+      _bootstrapCheckpointMode();
+    }
+  }
+
+  Future<void> _bootstrapCheckpointMode() async {
+    setState(() {
+      _isLoadingCheckpointMode = true;
+    });
+    try {
+      await Provider.of<CheckpointProvider>(
+        context,
+        listen: false,
+      ).loadCheckpoint(force: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingCheckpointMode = false;
+        });
+      }
     }
   }
 
   Future<void> _handleCheckpointComplete(
     String itemId, {
+    String? templateId,
     File? photoBefore,
     File? photoAfter,
     List<File>? photosBefore,
@@ -60,12 +81,16 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
       latitude: latitude,
       longitude: longitude,
       accuracy: accuracy,
+      templateId: templateId,
     );
     if (mounted) {
       if (success) {
         ToastHelper.showSuccess(context, 'Checkpoint selesai!');
       } else {
-        ToastHelper.showError(context, cp.error ?? 'Gagal menyelesaikan checkpoint');
+        ToastHelper.showError(
+          context,
+          cp.error ?? 'Gagal menyelesaikan checkpoint',
+        );
       }
     }
   }
@@ -82,7 +107,9 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
       setState(() {
         _summaryController.text = activity.summary;
         _existingPhotoUrls = activity.photoUrls ?? [];
-        _activityType = (activity.activityType.isNotEmpty ? activity.activityType : 'normal');
+        _activityType = (activity.activityType.isNotEmpty
+            ? activity.activityType
+            : 'normal');
         _isLoadingActivity = false;
       });
     } else {
@@ -128,7 +155,7 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
   Future<void> _pickPhotosFromGallery() async {
     final ImagePicker picker = ImagePicker();
     final List<XFile> images = await picker.pickMultiImage();
-    
+
     if (images.isNotEmpty) {
       setState(() {
         _selectedPhotos.addAll(images.map((xFile) => File(xFile.path)));
@@ -181,7 +208,10 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
       return;
     }
 
-    final activityProvider = Provider.of<ActivityProvider>(context, listen: false);
+    final activityProvider = Provider.of<ActivityProvider>(
+      context,
+      listen: false,
+    );
     bool success;
 
     if (widget.activityId != null) {
@@ -230,10 +260,12 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoadingActivity) {
+    if (_isLoadingActivity || _isLoadingCheckpointMode) {
       return Scaffold(
         appBar: AppBar(
-          title: Text(widget.activityId != null ? 'Edit Aktivitas' : 'Tambah Aktivitas'),
+          title: Text(
+            widget.activityId != null ? 'Edit Aktivitas' : 'Tambah Aktivitas',
+          ),
         ),
         body: const Center(child: CircularProgressIndicator()),
       );
@@ -241,9 +273,22 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
 
     // === CHECKPOINT MODE: Read from provider (pre-fetched by home) ===
     final cp = Provider.of<CheckpointProvider>(context);
-    final hasCheckpoint = widget.activityId == null && cp.hasCheckpoint && cp.template != null;
+    final hasAssignedCheckpoint =
+        cp.hasCheckpoint || cp.templateStates.isNotEmpty;
+    final hasCheckpoint =
+        widget.activityId == null &&
+        hasAssignedCheckpoint &&
+        (cp.template != null || cp.activeTemplateState != null);
 
     if (hasCheckpoint) {
+      final activeState = cp.activeTemplateState;
+      if (activeState == null) {
+        return Scaffold(
+          appBar: AppBar(title: const Text('Checkpoint Hari Ini')),
+          body: const Center(child: CircularProgressIndicator()),
+        );
+      }
+
       return Scaffold(
         backgroundColor: Colors.grey.shade50,
         appBar: AppBar(
@@ -261,10 +306,86 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
         body: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
+            if (cp.hasMultipleTemplates) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.shade100),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Template aktif hari ini: ${cp.templateStates.length}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blue.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: cp.templateStates.map((state) {
+                        final selected =
+                            state.template.id == cp.activeTemplateId;
+                        final done = state.progress
+                            .where((item) => item.completed)
+                            .length;
+                        final total = state.progress.length;
+                        return ChoiceChip(
+                          label: Text('${state.template.name} ($done/$total)'),
+                          selected: selected,
+                          onSelected: (_) =>
+                              cp.setActiveTemplate(state.template.id),
+                          selectedColor: Colors.blue.shade600,
+                          labelStyle: TextStyle(
+                            color: selected
+                                ? Colors.white
+                                : Colors.blue.shade800,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          backgroundColor: Colors.white,
+                          side: BorderSide(color: Colors.blue.shade200),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             CheckpointTimelineWidget(
-              template: cp.template!,
-              progress: cp.progress,
-              onComplete: _handleCheckpointComplete,
+              key: ValueKey(activeState.template.id),
+              template: activeState.template,
+              progress: activeState.progress,
+              onComplete:
+                  (
+                    itemId, {
+                    photoBefore,
+                    photoAfter,
+                    photosBefore,
+                    photosAfter,
+                    notes,
+                    latitude,
+                    longitude,
+                    accuracy,
+                  }) => _handleCheckpointComplete(
+                    itemId,
+                    templateId: activeState.template.id,
+                    photoBefore: photoBefore,
+                    photoAfter: photoAfter,
+                    photosBefore: photosBefore,
+                    photosAfter: photosAfter,
+                    notes: notes,
+                    latitude: latitude,
+                    longitude: longitude,
+                    accuracy: accuracy,
+                  ),
             ),
           ],
         ),
@@ -274,7 +395,9 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
     // === DEFAULT MODE: Form daily activity biasa ===
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.activityId != null ? 'Edit Aktivitas' : 'Tambah Aktivitas'),
+        title: Text(
+          widget.activityId != null ? 'Edit Aktivitas' : 'Tambah Aktivitas',
+        ),
       ),
       body: Form(
         key: _formKey,
@@ -339,7 +462,8 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      if (_existingPhotoUrls.isNotEmpty || _selectedPhotos.isNotEmpty)
+                      if (_existingPhotoUrls.isNotEmpty ||
+                          _selectedPhotos.isNotEmpty)
                         TextButton.icon(
                           onPressed: () {
                             setState(() {
@@ -348,7 +472,10 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
                             });
                           },
                           icon: const Icon(Icons.delete_outline, size: 18),
-                          label: const Text('Hapus Semua', style: TextStyle(fontSize: 12)),
+                          label: const Text(
+                            'Hapus Semua',
+                            style: TextStyle(fontSize: 12),
+                          ),
                         ),
                     ],
                   ),
@@ -358,16 +485,26 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 40),
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey[300]!, style: BorderStyle.solid),
+                        border: Border.all(
+                          color: Colors.grey[300]!,
+                          style: BorderStyle.solid,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
                         children: [
-                          Icon(Icons.photo_library, size: 48, color: Colors.grey[400]),
+                          Icon(
+                            Icons.photo_library,
+                            size: 48,
+                            color: Colors.grey[400],
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             'Belum ada foto',
-                            style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
                           ),
                         ],
                       ),
@@ -376,13 +513,16 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        crossAxisSpacing: 8,
-                        mainAxisSpacing: 8,
-                        childAspectRatio: 0.75, // 3/4 ratio for portrait photos
-                      ),
-                      itemCount: _existingPhotoUrls.length + _selectedPhotos.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                            childAspectRatio:
+                                0.75, // 3/4 ratio for portrait photos
+                          ),
+                      itemCount:
+                          _existingPhotoUrls.length + _selectedPhotos.length,
                       itemBuilder: (context, index) {
                         // Existing photos first
                         if (index < _existingPhotoUrls.length) {
@@ -399,13 +539,19 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
                                   placeholder: (context, url) => Container(
                                     color: Colors.grey[200],
                                     child: const Center(
-                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
                                     ),
                                   ),
-                                  errorWidget: (context, url, error) => Container(
-                                    color: Colors.grey[200],
-                                    child: Icon(Icons.broken_image, color: Colors.grey[400]),
-                                  ),
+                                  errorWidget: (context, url, error) =>
+                                      Container(
+                                        color: Colors.grey[200],
+                                        child: Icon(
+                                          Icons.broken_image,
+                                          color: Colors.grey[400],
+                                        ),
+                                      ),
                                 ),
                               ),
                               Positioned(
@@ -512,4 +658,3 @@ class _ActivityFormScreenState extends State<ActivityFormScreen> {
     );
   }
 }
-

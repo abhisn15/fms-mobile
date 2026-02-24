@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/activity_provider.dart';
-import '../../widgets/adaptive_image.dart';
+import '../../providers/checkpoint_provider.dart';
 import 'activity_form_screen.dart';
+import '../team/team_tasks_screen.dart';
 import '../../models/activity_model.dart';
+import '../../models/team_task_model.dart';
 import '../../config/api_config.dart';
+import '../../services/team_service.dart';
 
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
@@ -22,11 +25,85 @@ class _ActivityScreenState extends State<ActivityScreen> {
     // Use the model's computed isPatroli property
     return activity.isPatroli;
   }
+
+  bool _hasCheckpointHistory(DailyActivity activity) {
+    final hasTemplateId =
+        (activity.checkpointTemplateId ?? '').trim().isNotEmpty;
+    final hasCheckpointItems =
+        activity.checkpoints != null && activity.checkpoints!.isNotEmpty;
+    final summary = activity.summary.toLowerCase();
+    final hasSummaryHint = summary.contains('checkpoint progress');
+    return hasTemplateId || hasCheckpointItems || hasSummaryHint;
+  }
+
+  bool _isTaskEvidenceActivity(DailyActivity activity) {
+    final summary = activity.summary.trim();
+    return RegExp(
+          r'\[TASK:[^\]]+\]',
+          caseSensitive: false,
+        ).hasMatch(summary) ||
+        summary.toLowerCase().contains('penyelesaian tugas');
+  }
+
+  bool _isLeaderManualTaskActivity(DailyActivity activity) {
+    if (!_isTaskEvidenceActivity(activity)) return false;
+    return activity.summary.toLowerCase().contains('penyelesaian tugas');
+  }
+
+  bool _isCheckpointActivity(DailyActivity activity) {
+    return _isPatroli(activity) ||
+        _hasCheckpointHistory(activity) ||
+        _isTaskEvidenceActivity(activity);
+  }
+
+  String _displaySummary(DailyActivity activity) {
+    if (_isTaskEvidenceActivity(activity)) {
+      final withoutMarker = activity.summary
+          .replaceFirst(
+            RegExp(r'^\[TASK:[^\]]+\]\s*', caseSensitive: false),
+            '',
+          )
+          .trim();
+      return withoutMarker
+          .replaceFirst(
+            RegExp(r'^penyelesaian tugas:\s*', caseSensitive: false),
+            '',
+          )
+          .trim();
+    }
+
+    if (activity.checkpoints != null && activity.checkpoints!.isNotEmpty) {
+      final total = activity.checkpoints!.length;
+      final done = activity.checkpoints!.where((item) => item.completed).length;
+      if (done >= total) {
+        return 'Checkpoint completed: $done/$total';
+      }
+      return 'Checkpoint progress: $done/$total';
+    }
+
+    final withoutMarker = activity.summary
+        .replaceFirst(
+          RegExp(r'^\[TASK:[^\]]+\]\s*', caseSensitive: false),
+          '',
+        )
+        .trim();
+    return withoutMarker
+        .replaceFirst(
+          RegExp(r'^penyelesaian tugas:\s*', caseSensitive: false),
+          '',
+        )
+        .trim();
+  }
+
   // Default: bulan ini (tanggal 1 sampai hari ini)
   late DateTime _startDate = _getDefaultStartDate();
   late DateTime _endDate = _getDefaultEndDate();
   int _currentPage = 1;
   final int _itemsPerPage = 10;
+  final TeamService _teamService = TeamService();
+  List<TeamTask> _manualTasks = [];
+  bool _isLoadingManualTasks = false;
+  String? _expandedActivityId;
 
   static DateTime _getDefaultStartDate() {
     final now = DateTime.now();
@@ -35,6 +112,246 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   static DateTime _getDefaultEndDate() {
     return DateTime.now();
+  }
+
+  Widget _buildCheckpointTodayCard(CheckpointProvider checkpointProvider) {
+    final previews = checkpointProvider.todoPreviews;
+    final manualTasks = _getOpenManualTasks();
+    final totalDone = previews.fold<int>(
+      0,
+      (sum, preview) => sum + preview.completedCount,
+    );
+    final totalItems = previews.fold<int>(
+      0,
+      (sum, preview) => sum + preview.totalCount,
+    );
+    final totalPending = previews.fold<int>(
+      0,
+      (sum, preview) => sum + preview.pendingItems.length,
+    );
+    final allCheckpointDone = totalItems > 0 && totalPending == 0;
+    final allCompleted = allCheckpointDone && manualTasks.isEmpty;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green.shade100),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.checklist_rtl, size: 18, color: Colors.green),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  allCompleted
+                      ? 'Checkpoint Completed'
+                      : 'Daftar Checkpoint Hari Ini',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                '$totalDone/$totalItems',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.green.shade800,
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh, size: 18),
+                onPressed: () async {
+                  await checkpointProvider.loadCheckpoint(force: true);
+                  if (!mounted) return;
+                  await _loadManualTasks(silent: true);
+                },
+                tooltip: 'Refresh checkpoint',
+              ),
+            ],
+          ),
+          if (previews.isEmpty)
+            Text(
+              'Belum ada template checkpoint aktif hari ini',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            )
+          else if (allCompleted) ...[
+            Text(
+              'Semua checkpoint hari ini selesai. Hasilnya ada di list Checkpoint Activity.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.green.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ] else ...[
+            Text(
+              totalPending > 0
+                  ? '$totalPending item checkpoint belum selesai'
+                  : 'Semua checkpoint hari ini sudah selesai',
+              style: TextStyle(
+                fontSize: 12,
+                color: totalPending > 0
+                    ? Colors.orange.shade700
+                    : Colors.green.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...previews.map((preview) {
+              final pending = preview.pendingItems;
+              return Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            preview.templateName,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          '${preview.completedCount}/${preview.totalCount}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    if (pending.isEmpty)
+                      Text(
+                        'Selesai',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      )
+                    else ...[
+                      ...pending
+                          .take(2)
+                          .map(
+                            (item) => Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                '- ${item.name}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade700,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                      if (pending.length > 2)
+                        Text(
+                          '+${pending.length - 2} item lain',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              );
+            }),
+            if (_isLoadingManualTasks)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  'Memuat tugas manual...',
+                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                ),
+              )
+            else ...[
+              const SizedBox(height: 10),
+              Text(
+                'Tugas Manual Team Leader',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.blueGrey.shade700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              if (manualTasks.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Belum ada tugas manual aktif',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+                )
+              else ...[
+                ...manualTasks.take(3).map((task) {
+                  final dueLabel = task.dueDate == null
+                      ? 'Tanpa deadline'
+                      : DateFormat(
+                          'dd MMM yyyy',
+                          'id_ID',
+                        ).format(task.dueDate!.toLocal());
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      '- ${task.title} ($dueLabel)',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }),
+                if (manualTasks.length > 3)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      '+${manualTasks.length - 3} tugas manual lainnya',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _openMyManualTasks,
+                    icon: const Icon(Icons.open_in_new, size: 16),
+                    label: const Text('Buka & kerjakan tugas manual'),
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ],
+      ),
+    );
   }
 
   DateTime? _parseActivityDate(DailyActivity activity) {
@@ -48,8 +365,16 @@ class _ActivityScreenState extends State<ActivityScreen> {
     if (createdAt == null) {
       return parsedDate;
     }
-    final dateOnly = DateTime(parsedDate.year, parsedDate.month, parsedDate.day);
-    final createdOnly = DateTime(createdAt.year, createdAt.month, createdAt.day);
+    final dateOnly = DateTime(
+      parsedDate.year,
+      parsedDate.month,
+      parsedDate.day,
+    );
+    final createdOnly = DateTime(
+      createdAt.year,
+      createdAt.month,
+      createdAt.day,
+    );
     final diffDays = (createdOnly.difference(dateOnly).inDays).abs();
     if (diffDays <= 1) {
       return createdAt;
@@ -100,6 +425,113 @@ class _ActivityScreenState extends State<ActivityScreen> {
     }
   }
 
+  bool _isTaskOpenStatus(String status) {
+    return status == 'todo' || status == 'in_progress';
+  }
+
+  List<TeamTask> _getOpenManualTasks() {
+    return _manualTasks
+        .where((task) => _isTaskOpenStatus(task.status))
+        .toList();
+  }
+
+  Future<void> _loadManualTasks({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _isLoadingManualTasks = true;
+      });
+    }
+    try {
+      final tasks = await _teamService.getMyOpenTasks(limit: 100);
+      if (!mounted) return;
+      setState(() {
+        _manualTasks = tasks;
+        _isLoadingManualTasks = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _manualTasks = [];
+        _isLoadingManualTasks = false;
+      });
+    }
+  }
+
+  Future<void> _openMyManualTasks() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const TeamTasksScreen(
+          isLeader: false,
+          teams: [],
+          membersByTeam: {},
+        ),
+      ),
+    );
+    if (!mounted) return;
+    await Provider.of<ActivityProvider>(context, listen: false).loadActivities();
+    await Provider.of<CheckpointProvider>(
+      context,
+      listen: false,
+    ).loadCheckpoint(force: true);
+    if (!mounted) return;
+    await _loadManualTasks(silent: true);
+  }
+
+  Future<void> _openActivityFormFlow() async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const ActivityFormScreen()),
+    );
+    if (result == true && mounted) {
+      Provider.of<ActivityProvider>(context, listen: false).loadActivities();
+      await Provider.of<CheckpointProvider>(
+        context,
+        listen: false,
+      ).loadCheckpoint(force: true);
+      if (!mounted) return;
+      await _loadManualTasks(silent: true);
+    }
+  }
+
+  Future<void> _openAddAction({required bool hasAssignedCheckpoint}) async {
+    final hasOpenManualTasks = _getOpenManualTasks().isNotEmpty;
+    if (!hasAssignedCheckpoint || !hasOpenManualTasks) {
+      await _openActivityFormFlow();
+      return;
+    }
+
+    if (!mounted) return;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.checklist_rtl),
+              title: const Text('Isi Checkpoint Hari Ini'),
+              subtitle: const Text('Lanjutkan checklist checkpoint'),
+              onTap: () => Navigator.of(sheetContext).pop('checkpoint'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.assignment_turned_in_outlined),
+              title: const Text('Kerjakan Tugas Manual'),
+              subtitle: const Text('Buka tugas dari Team Leader'),
+              onTap: () => Navigator.of(sheetContext).pop('manual'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+    if (action == 'manual') {
+      await _openMyManualTasks();
+      return;
+    }
+    await _openActivityFormFlow();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -107,9 +539,22 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final now = DateTime.now();
     _startDate = DateTime(now.year, now.month, 1);
     _endDate = now;
-    
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<ActivityProvider>(context, listen: false).loadActivities();
+      final activityProvider = Provider.of<ActivityProvider>(
+        context,
+        listen: false,
+      );
+      final checkpointProvider = Provider.of<CheckpointProvider>(
+        context,
+        listen: false,
+      );
+
+      activityProvider.loadActivities();
+      checkpointProvider.loadCheckpoint(force: true).then((_) {
+        if (!mounted) return;
+        _loadManualTasks(silent: true);
+      });
     });
   }
 
@@ -138,7 +583,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
       },
     );
 
-    if (picked != null && picked != DateTimeRange(start: _startDate, end: _endDate)) {
+    if (picked != null &&
+        picked != DateTimeRange(start: _startDate, end: _endDate)) {
       setState(() {
         _startDate = picked.start;
         _endDate = picked.end;
@@ -149,29 +595,73 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final checkpointProvider = Provider.of<CheckpointProvider>(context);
+    final isResolvingCheckpointMode = !checkpointProvider.hasFetchedOnce;
+    if (isResolvingCheckpointMode) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Aktivitas Harian')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final hasAssignedCheckpoint =
+        checkpointProvider.hasCheckpoint ||
+        checkpointProvider.templateStates.isNotEmpty;
+    final effectiveViewMode = hasAssignedCheckpoint ? 'checkpoint' : 'daily';
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Aktivitas Harian'),
+        title: Text(
+          effectiveViewMode == 'checkpoint'
+              ? 'Checkpoint Activity'
+              : 'Aktivitas Harian',
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () async {
-              final result = await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const ActivityFormScreen(),
-                ),
-              );
-              if (result == true && mounted) {
-                Provider.of<ActivityProvider>(context, listen: false)
-                    .loadActivities();
+              if (hasAssignedCheckpoint) {
+                await Provider.of<CheckpointProvider>(
+                  context,
+                  listen: false,
+                ).loadCheckpoint(force: true);
               }
+              if (!mounted) return;
+              await _openAddAction(
+                hasAssignedCheckpoint: hasAssignedCheckpoint,
+              );
             },
           ),
         ],
       ),
       body: Column(
         children: [
+          if (hasAssignedCheckpoint)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.green[100]!),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle_outline,
+                    size: 18,
+                    color: Colors.green,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Checkpoint aktif untuk Anda. Input Daily Activity manual disembunyikan.',
+                      style: TextStyle(fontSize: 12, color: Colors.green[800]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Date Range Filter Card
           Container(
             margin: const EdgeInsets.all(16),
@@ -191,10 +681,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     children: [
                       Text(
                         'Rentang Tanggal',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[600],
-                        ),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -216,11 +703,15 @@ class _ActivityScreenState extends State<ActivityScreen> {
               ],
             ),
           ),
+          if (effectiveViewMode == 'checkpoint')
+            _buildCheckpointTodayCard(checkpointProvider),
           // Activity List
           Expanded(
             child: Consumer<ActivityProvider>(
               builder: (context, activityProvider, _) {
-                debugPrint('[ActivityScreen] Consumer rebuilding - isLoading: ${activityProvider.isLoading}, error: ${activityProvider.error}');
+                debugPrint(
+                  '[ActivityScreen] Consumer rebuilding - isLoading: ${activityProvider.isLoading}, error: ${activityProvider.error}',
+                );
                 if (activityProvider.isLoading) {
                   return const Center(child: CircularProgressIndicator());
                 }
@@ -230,7 +721,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+                        Icon(
+                          Icons.error_outline,
+                          size: 64,
+                          color: Colors.red[300],
+                        ),
                         const SizedBox(height: 16),
                         Text(
                           activityProvider.error!,
@@ -251,35 +746,60 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
                 final recent = activityProvider.recentActivities;
                 final today = activityProvider.todayActivity;
-                debugPrint('[ActivityScreen] Provider data - today: ${today?.summary}, recent: ${recent.length}');
+                debugPrint(
+                  '[ActivityScreen] Provider data - today: ${today?.summary}, recent: ${recent.length}',
+                );
 
                 // Filter aktivitas berdasarkan tanggal
-                final startDateOnly = DateTime(_startDate.year, _startDate.month, _startDate.day);
-                final endDateOnly = DateTime(_endDate.year, _endDate.month, _endDate.day).add(const Duration(days: 1));
-                
+                final startDateOnly = DateTime(
+                  _startDate.year,
+                  _startDate.month,
+                  _startDate.day,
+                );
+                final endDateOnly = DateTime(
+                  _endDate.year,
+                  _endDate.month,
+                  _endDate.day,
+                ).add(const Duration(days: 1));
+
                 // Combine all activities first (pending activities already merged in ActivityProvider)
                 final allActivities = <DailyActivity>[];
                 if (today != null) {
                   allActivities.add(today);
-                  debugPrint('[ActivityScreen] Today activity: ${today.summary}, type: ${today.type}, isPatroli: ${today.isPatroli}');
+                  debugPrint(
+                    '[ActivityScreen] Today activity: ${today.summary}, type: ${today.type}, isPatroli: ${today.isPatroli}',
+                  );
                 }
                 allActivities.addAll(recent);
 
-                // Filter: hanya tampilkan daily activity (bukan patroli)
-                final dailyActivitiesOnly = allActivities.where((activity) => !_isPatroli(activity)).toList();
-                debugPrint('[ActivityScreen] Total activities: ${allActivities.length}, Daily activities: ${dailyActivitiesOnly.length}');
-                debugPrint('[ActivityScreen] Filtered ${allActivities.length} total activities to ${dailyActivitiesOnly.length} daily activities');
-                
+                final activitiesByMode = allActivities.where((activity) {
+                  final checkpoint = _isCheckpointActivity(activity);
+                  return effectiveViewMode == 'checkpoint'
+                      ? checkpoint
+                      : !checkpoint;
+                }).toList();
+                debugPrint(
+                  '[ActivityScreen] Total activities: ${allActivities.length}, mode=$effectiveViewMode, result=${activitiesByMode.length}',
+                );
+
                 // Filter by date range
-                final allFilteredActivities = dailyActivitiesOnly.where((activity) {
+                final allFilteredActivities = activitiesByMode.where((
+                  activity,
+                ) {
                   try {
                     final activityDate = _parseActivityDate(activity);
                     if (activityDate == null) {
                       return true;
                     }
-                    final activityDateOnly = DateTime(activityDate.year, activityDate.month, activityDate.day);
-                    return activityDateOnly.isAfter(startDateOnly.subtract(const Duration(days: 1))) && 
-                           activityDateOnly.isBefore(endDateOnly);
+                    final activityDateOnly = DateTime(
+                      activityDate.year,
+                      activityDate.month,
+                      activityDate.day,
+                    );
+                    return activityDateOnly.isAfter(
+                          startDateOnly.subtract(const Duration(days: 1)),
+                        ) &&
+                        activityDateOnly.isBefore(endDateOnly);
                   } catch (e) {
                     return false;
                   }
@@ -287,21 +807,26 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
                 // Calculate pagination
                 final totalItems = allFilteredActivities.length;
-                final totalPages = totalItems > 0 ? (totalItems / _itemsPerPage).ceil() : 1;
+                final totalPages = totalItems > 0
+                    ? (totalItems / _itemsPerPage).ceil()
+                    : 1;
                 final startIndex = (_currentPage - 1) * _itemsPerPage;
                 final endIndex = startIndex + _itemsPerPage;
-                final paginatedActivities = totalItems > 0 ? allFilteredActivities.sublist(
-                  startIndex.clamp(0, totalItems),
-                  endIndex.clamp(0, totalItems),
-                ) : <DailyActivity>[];
+                final paginatedActivities = totalItems > 0
+                    ? allFilteredActivities.sublist(
+                        startIndex.clamp(0, totalItems),
+                        endIndex.clamp(0, totalItems),
+                      )
+                    : <DailyActivity>[];
 
                 // Separate today and recent for display
                 DailyActivity? paginatedToday;
                 List<DailyActivity> paginatedRecent = [];
-                
+
                 if (paginatedActivities.isNotEmpty) {
                   // Check if first item is today
-                  if (today != null && paginatedActivities.first.id == today.id) {
+                  if (today != null &&
+                      paginatedActivities.first.id == today.id) {
                     paginatedToday = paginatedActivities.first;
                     paginatedRecent = paginatedActivities.skip(1).toList();
                   } else {
@@ -310,63 +835,113 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 }
 
                 if (allFilteredActivities.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.assignment_outlined, size: 64, color: Colors.grey[400]),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Belum ada aktivitas',
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton.icon(
-                    onPressed: () async {
-                      final result = await Navigator.push<bool>(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ActivityFormScreen(),
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.assignment_outlined,
+                          size: 64,
+                          color: Colors.grey[400],
                         ),
-                      );
-                      if (result == true && mounted) {
-                        activityProvider.loadActivities();
-                      }
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('Tambah Aktivitas'),
-                  ),
-                ],
-              ),
-            );
-          }
+                        const SizedBox(height: 16),
+                        Text(
+                          effectiveViewMode == 'checkpoint'
+                              ? 'Belum ada data checkpoint'
+                              : 'Belum ada aktivitas',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            if (effectiveViewMode == 'checkpoint') {
+                              await Provider.of<CheckpointProvider>(
+                                context,
+                                listen: false,
+                              ).loadCheckpoint(force: true);
+                            }
+                            final result = await Navigator.push<bool>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ActivityFormScreen(),
+                              ),
+                            );
+                            if (result == true && mounted) {
+                              activityProvider.loadActivities();
+                              await Provider.of<CheckpointProvider>(
+                                context,
+                                listen: false,
+                              ).loadCheckpoint(force: true);
+                              if (!mounted) return;
+                              await _loadManualTasks(silent: true);
+                            }
+                          },
+                          icon: const Icon(Icons.add),
+                          label: Text(
+                            effectiveViewMode == 'checkpoint'
+                                ? 'Isi Checkpoint'
+                                : 'Tambah Aktivitas',
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
 
                 return RefreshIndicator(
-                  onRefresh: () => activityProvider.loadActivities(),
+                  onRefresh: () async {
+                    await activityProvider.loadActivities();
+                    if (effectiveViewMode == 'checkpoint') {
+                      await Provider.of<CheckpointProvider>(
+                        context,
+                        listen: false,
+                      ).loadCheckpoint(force: true);
+                      if (!mounted) return;
+                      await _loadManualTasks(silent: true);
+                    }
+                  },
                   child: Column(
                     children: [
                       Expanded(
-                        child: ListView(
-                          padding: const EdgeInsets.all(16),
-                          children: [
-                            if (paginatedToday != null) ...[
-                              _buildActivityCard(context, paginatedToday, isToday: true),
-                              const SizedBox(height: 16),
-                            ],
-                            if (paginatedRecent.isNotEmpty) ...[
-                              Text(
-                                'Riwayat',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                              ),
-                              const SizedBox(height: 8),
-                              ...paginatedRecent.map((activity) => Padding(
+                        child: NotificationListener<UserScrollNotification>(
+                          onNotification: (notification) {
+                            if (notification.direction != ScrollDirection.idle &&
+                                _expandedActivityId != null) {
+                              setState(() {
+                                _expandedActivityId = null;
+                              });
+                            }
+                            return false;
+                          },
+                          child: ListView(
+                            padding: const EdgeInsets.all(16),
+                            children: [
+                              if (paginatedToday != null) ...[
+                                _buildActivityCard(
+                                  context,
+                                  paginatedToday,
+                                  isToday: true,
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              if (paginatedRecent.isNotEmpty) ...[
+                                Text(
+                                  effectiveViewMode == 'checkpoint'
+                                      ? 'Riwayat Checkpoint'
+                                      : 'Riwayat',
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 8),
+                                ...paginatedRecent.map(
+                                  (activity) => Padding(
                                     padding: const EdgeInsets.only(bottom: 8),
                                     child: _buildActivityCard(context, activity),
-                                  )),
+                                  ),
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
                       // Pagination (always show if more than itemsPerPage)
@@ -375,7 +950,9 @@ class _ActivityScreenState extends State<ActivityScreen> {
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: Colors.grey[50],
-                            border: Border(top: BorderSide(color: Colors.grey[200]!)),
+                            border: Border(
+                              top: BorderSide(color: Colors.grey[200]!),
+                            ),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -401,7 +978,9 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                   ),
                                   Text(
                                     '$_currentPage / $totalPages',
-                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.chevron_right),
@@ -429,23 +1008,43 @@ class _ActivityScreenState extends State<ActivityScreen> {
     );
   }
 
-
-
-  Widget _buildActivityCard(BuildContext context, DailyActivity activity, {bool isToday = false}) {
+  Widget _buildActivityCard(
+    BuildContext context,
+    DailyActivity activity, {
+    bool isToday = false,
+  }) {
+    final isCheckpoint = _isCheckpointActivity(activity);
+    final isTaskEvidence = _isTaskEvidenceActivity(activity);
+    final isLeaderManualTask = _isLeaderManualTaskActivity(activity);
+    final summaryText = _displaySummary(activity);
     final activityDate = _parseActivityDate(activity);
     final activityDateLabel = activityDate != null
         ? DateFormat('dd MMMM yyyy').format(activityDate)
         : (activity.date.isNotEmpty ? activity.date : 'Tanggal tidak tersedia');
     final activityTimeLabel = _formatActivityTime(activity);
+    final isExpanded = _expandedActivityId == activity.id;
     return Card(
       color: isToday ? Colors.blue[50] : null,
       child: ExpansionTile(
+        key: ValueKey(
+          'activity-${activity.id}-${isExpanded ? "open" : "closed"}',
+        ),
+        initiallyExpanded: isExpanded,
+        onExpansionChanged: (expanded) {
+          setState(() {
+            if (expanded) {
+              _expandedActivityId = activity.id;
+            } else if (_expandedActivityId == activity.id) {
+              _expandedActivityId = null;
+            }
+          });
+        },
         leading: Stack(
           children: [
             CircleAvatar(
               backgroundColor: Colors.blue.withOpacity(0.2),
-              child: const Icon(
-                Icons.assignment,
+              child: Icon(
+                isCheckpoint ? Icons.checklist_rtl : Icons.assignment,
                 color: Colors.blue,
               ),
             ),
@@ -471,29 +1070,48 @@ class _ActivityScreenState extends State<ActivityScreen> {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    activityDateLabel,
+                  children: [
+                    Text(
+                      activityDateLabel,
                     style: TextStyle(
                       fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
                     ),
                   ),
-                  if (activityTimeLabel != null)
-                    Text(
-                      activityTimeLabel,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey[600],
+                    if (activityTimeLabel != null)
+                      Text(
+                        activityTimeLabel,
+                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                       ),
-                    ),
-                  Text(
-                    _formatActivityTypeLabel(activity.activityType),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.blueGrey[700],
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                    if (!isCheckpoint && !isTaskEvidence)
+                      Text(
+                        _formatActivityTypeLabel(activity.activityType),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.blueGrey[700],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    if (isLeaderManualTask)
+                      Container(
+                        margin: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.blue.shade100),
+                        ),
+                        child: Text(
+                          'Tugas manual dari leader',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ),
                 ],
               ),
             ),
@@ -511,16 +1129,18 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     const SizedBox(width: 4),
                     Text(
                       'Pending - Tunggu Koneksi',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.orange[800],
-                  ),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange[800],
+                      ),
                     ),
                   ],
                 ),
               ),
-            if (activity.isRead == true && activity.viewsCount != null && activity.viewsCount! > 0)
+            if (activity.isRead == true &&
+                activity.viewsCount != null &&
+                activity.viewsCount! > 0)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
@@ -546,11 +1166,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
           ],
         ),
         subtitle: Text(
-          activity.summary,
+          summaryText,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: activity.isLocal
+        trailing: activity.isLocal || isCheckpoint || isTaskEvidence
             ? const SizedBox.shrink()
             : PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert),
@@ -559,18 +1179,24 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     final result = await Navigator.push<bool>(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => ActivityFormScreen(activityId: activity.id),
+                        builder: (_) =>
+                            ActivityFormScreen(activityId: activity.id),
                       ),
                     );
                     if (result == true && mounted) {
-                      Provider.of<ActivityProvider>(context, listen: false).loadActivities();
+                      Provider.of<ActivityProvider>(
+                        context,
+                        listen: false,
+                      ).loadActivities();
                     }
                   } else if (value == 'delete') {
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (context) => AlertDialog(
                         title: const Text('Hapus Aktivitas'),
-                        content: const Text('Apakah Anda yakin ingin menghapus aktivitas ini?'),
+                        content: const Text(
+                          'Apakah Anda yakin ingin menghapus aktivitas ini?',
+                        ),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(context, false),
@@ -578,20 +1204,34 @@ class _ActivityScreenState extends State<ActivityScreen> {
                           ),
                           TextButton(
                             onPressed: () => Navigator.pop(context, true),
-                            style: TextButton.styleFrom(foregroundColor: Colors.red),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.red,
+                            ),
                             child: const Text('Hapus'),
                           ),
                         ],
                       ),
                     );
                     if (confirm == true && mounted) {
-                      final provider = Provider.of<ActivityProvider>(context, listen: false);
-                      final success = await provider.deleteActivity(activity.id);
+                      final provider = Provider.of<ActivityProvider>(
+                        context,
+                        listen: false,
+                      );
+                      final success = await provider.deleteActivity(
+                        activity.id,
+                      );
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(success ? 'Aktivitas berhasil dihapus' : provider.error ?? 'Gagal menghapus aktivitas'),
-                            backgroundColor: success ? Colors.green : Colors.red,
+                            content: Text(
+                              success
+                                  ? 'Aktivitas berhasil dihapus'
+                                  : provider.error ??
+                                        'Gagal menghapus aktivitas',
+                            ),
+                            backgroundColor: success
+                                ? Colors.green
+                                : Colors.red,
                           ),
                         );
                       }
@@ -627,95 +1267,440 @@ class _ActivityScreenState extends State<ActivityScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildInfoRow('Jenis', _formatActivityTypeLabel(activity.activityType)),
-                _buildInfoRow('Keterangan', activity.summary),
-                if (activity.photoUrls != null && activity.photoUrls!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Foto:',
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                if (!isCheckpoint && !isTaskEvidence)
+                  _buildInfoRow(
+                    'Jenis',
+                    _formatActivityTypeLabel(activity.activityType),
                   ),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: activity.photoUrls!.map((url) {
-                      final isLocal = _isLocalPhotoUrl(url);
-                      final localPath = isLocal ? _resolveLocalPath(url) : null;
-                      final fullUrl = isLocal ? null : ApiConfig.getImageUrl(url);
-                      return GestureDetector(
-                        onTap: () {
-                          // Show full screen image dengan aspect ratio yang benar
-                          showDialog(
-                            context: context,
-                            builder: (context) => isLocal
-                                ? FullScreenImageDialog.file(
-                                    imageFile: File(localPath!),
-                                  )
-                                : FullScreenImageDialog.network(
-                                    imageUrl: fullUrl!,
-                                  ),
-                          );
-                        },
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            width: 120,
-                            height: 160, // 120 * 4/3 untuk portrait (lebih tinggi)
-                            child: isLocal
-                                ? Image.file(
-                                    File(localPath!),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        color: Colors.grey[200],
-                                        child: Icon(
-                                          Icons.broken_image,
-                                          color: Colors.grey[400],
-                                        ),
-                                      );
-                                    },
-                                  )
-                                : Image.network(
-                                    fullUrl!,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        color: Colors.grey[200],
-                                        child: Icon(
-                                          Icons.broken_image,
-                                          color: Colors.grey[400],
-                                        ),
-                                      );
-                                    },
-                                    loadingBuilder: (context, child, loadingProgress) {
-                                      if (loadingProgress == null) return child;
-                                      return Container(
-                                        color: Colors.grey[200],
-                                        child: const Center(
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        ),
-                                      );
-                                    },
-                                    frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                                      if (wasSynchronouslyLoaded) return child;
-                                      return AnimatedOpacity(
-                                        opacity: frame == null ? 0 : 1,
-                                        duration: const Duration(milliseconds: 200),
-                                        child: child,
-                                      );
-                                    },
-                                  ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                if (isLeaderManualTask)
+                  _buildInfoRow('Label', 'Tugas manual dari leader'),
+                _buildInfoRow('Keterangan', summaryText),
+                if (isCheckpoint &&
+                    activity.checkpoints != null &&
+                    activity.checkpoints!.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _buildCheckpointTimeline(context, activity.checkpoints!),
+                ],
+                if (isLeaderManualTask) ...[
+                  const SizedBox(height: 8),
+                  _buildManualTaskTimeline(
+                    context,
+                    activity: activity,
+                    summaryText: summaryText,
+                  ),
+                ] else if (activity.photoUrls != null &&
+                    activity.photoUrls!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _buildActivityPhotoSection(
+                    context,
+                    title: 'Foto Bukti',
+                    photoUrls: activity.photoUrls!,
                   ),
                 ],
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildActivityPhotoSection(
+    BuildContext context, {
+    required String title,
+    required List<String> photoUrls,
+  }) {
+    final sanitized = photoUrls
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+    if (sanitized.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: List.generate(sanitized.length, (index) {
+            final url = sanitized[index];
+            final isLocal = _isLocalPhotoUrl(url);
+            final localPath = isLocal ? _resolveLocalPath(url) : null;
+            final fullUrl = isLocal ? null : ApiConfig.getImageUrl(url);
+            return GestureDetector(
+              onTap: () =>
+                  _showPhotoGallery(context, sanitized, initialIndex: index),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: 120,
+                  height: 160,
+                  color: Colors.grey[100],
+                  child: isLocal
+                      ? Image.file(
+                          File(localPath!),
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: Colors.grey[200],
+                              child: Icon(
+                                Icons.broken_image,
+                                color: Colors.grey[400],
+                              ),
+                            );
+                          },
+                        )
+                      : Image.network(
+                          fullUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: Colors.grey[200],
+                              child: Icon(
+                                Icons.broken_image,
+                                color: Colors.grey[400],
+                              ),
+                            );
+                          },
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCheckpointTimeline(
+    BuildContext context,
+    List<SecurityCheckpoint> checkpoints,
+  ) {
+    final items = [...checkpoints];
+    items.sort((a, b) {
+      final orderA = a.order ?? 9999;
+      final orderB = b.order ?? 9999;
+      if (orderA != orderB) return orderA.compareTo(orderB);
+      return a.name.compareTo(b.name);
+    });
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Timeline Checkpoint',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: Colors.blueGrey[800],
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...List.generate(items.length, (index) {
+          final item = items[index];
+          final isLast = index == items.length - 1;
+          return _buildCheckpointTimelineItem(context, item, isLast: isLast);
+        }),
+      ],
+    );
+  }
+
+  Widget _buildManualTaskTimeline(
+    BuildContext context, {
+    required DailyActivity activity,
+    required String summaryText,
+  }) {
+    final activityTime = _formatActivityTime(activity);
+    final hasPhotos = activity.photoUrls != null && activity.photoUrls!.isNotEmpty;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 28,
+          child: Column(
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: Colors.blue[500],
+                  shape: BoxShape.circle,
+                ),
+              ),
+              Container(
+                width: 2,
+                height: hasPhotos ? 110 : 52,
+                color: Colors.blue.withValues(alpha: 0.3),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Timeline Tugas Manual',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.blue[800],
+                  ),
+                ),
+                if (activityTime != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Waktu submit: $activityTime',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Text(
+                  summaryText,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[800]),
+                ),
+                if (hasPhotos) ...[
+                  const SizedBox(height: 8),
+                  _buildActivityPhotoSection(
+                    context,
+                    title: 'Bukti Tugas Manual',
+                    photoUrls: activity.photoUrls!,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCheckpointTimelineItem(
+    BuildContext context,
+    SecurityCheckpoint checkpoint, {
+    required bool isLast,
+  }) {
+    final itemTime = checkpoint.timestamp != null
+        ? DateTime.tryParse(checkpoint.timestamp!)?.toLocal()
+        : null;
+    final timeLabel = itemTime != null
+        ? DateFormat('dd MMM yyyy • HH:mm', 'id_ID').format(itemTime)
+        : null;
+    final note = (checkpoint.notes ?? checkpoint.photoReason ?? '').trim();
+    final beforePhotos = checkpoint.beforePhotos;
+    final afterPhotos = checkpoint.afterPhotos;
+    final hasAnyPhotos = beforePhotos.isNotEmpty || afterPhotos.isNotEmpty;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 28,
+          child: Column(
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: checkpoint.completed ? Colors.green : Colors.grey[400],
+                  shape: BoxShape.circle,
+                ),
+              ),
+              if (!isLast)
+                Container(
+                  width: 2,
+                  height: 96,
+                  color: Colors.grey[300],
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: checkpoint.completed
+                  ? Colors.green.withValues(alpha: 0.06)
+                  : Colors.grey.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: checkpoint.completed
+                    ? Colors.green.withValues(alpha: 0.35)
+                    : Colors.grey.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        checkpoint.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        color: checkpoint.completed
+                            ? Colors.green.withValues(alpha: 0.14)
+                            : Colors.orange.withValues(alpha: 0.16),
+                      ),
+                      child: Text(
+                        checkpoint.completed ? 'Selesai' : 'Belum selesai',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: checkpoint.completed
+                              ? Colors.green[700]
+                              : Colors.orange[700],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (timeLabel != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    timeLabel,
+                    style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                  ),
+                ],
+                if (note.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    note,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[800]),
+                  ),
+                ],
+                if (hasAnyPhotos) ...[
+                  const SizedBox(height: 8),
+                  if (beforePhotos.isNotEmpty)
+                    _buildCheckpointPhotoStrip(
+                      context,
+                      label: 'Before',
+                      photoUrls: beforePhotos,
+                    ),
+                  if (afterPhotos.isNotEmpty) ...[
+                    if (beforePhotos.isNotEmpty) const SizedBox(height: 8),
+                    _buildCheckpointPhotoStrip(
+                      context,
+                      label: 'After',
+                      photoUrls: afterPhotos,
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCheckpointPhotoStrip(
+    BuildContext context, {
+    required String label,
+    required List<String> photoUrls,
+  }) {
+    final sanitized = photoUrls
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+    if (sanitized.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$label (${sanitized.length})',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[700],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: List.generate(sanitized.length, (index) {
+            final rawUrl = sanitized[index];
+            final isLocal = _isLocalPhotoUrl(rawUrl);
+            final localPath = isLocal ? _resolveLocalPath(rawUrl) : null;
+            final fullUrl = isLocal ? null : ApiConfig.getImageUrl(rawUrl);
+            return GestureDetector(
+              onTap: () =>
+                  _showPhotoGallery(context, sanitized, initialIndex: index),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 76,
+                  height: 76,
+                  child: isLocal
+                      ? Image.file(File(localPath!), fit: BoxFit.cover)
+                      : Image.network(
+                          fullUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => Container(
+                            color: Colors.grey[200],
+                            child: Icon(
+                              Icons.broken_image,
+                              size: 18,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+
+  void _showPhotoGallery(
+    BuildContext context,
+    List<String> photoUrls, {
+    int initialIndex = 0,
+  }) {
+    if (photoUrls.isEmpty) return;
+    showDialog(
+      context: context,
+      builder: (_) => _ActivityPhotoGalleryDialog(
+        photoUrls: photoUrls,
+        initialIndex: initialIndex,
       ),
     );
   }
@@ -736,13 +1721,142 @@ class _ActivityScreenState extends State<ActivityScreen> {
               ),
             ),
           ),
-          Expanded(
-            child: Text(value),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityPhotoGalleryDialog extends StatefulWidget {
+  final List<String> photoUrls;
+  final int initialIndex;
+
+  const _ActivityPhotoGalleryDialog({
+    required this.photoUrls,
+    this.initialIndex = 0,
+  });
+
+  @override
+  State<_ActivityPhotoGalleryDialog> createState() =>
+      _ActivityPhotoGalleryDialogState();
+}
+
+class _ActivityPhotoGalleryDialogState extends State<_ActivityPhotoGalleryDialog> {
+  late final PageController _pageController;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    final safeIndex = widget.initialIndex
+        .clamp(0, widget.photoUrls.length - 1)
+        .toInt();
+    _currentIndex = safeIndex;
+    _pageController = PageController(initialPage: safeIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  bool _isLocal(String value) => value.startsWith('file://');
+
+  String _localPath(String value) {
+    try {
+      return Uri.parse(value).toFilePath();
+    } catch (_) {
+      return value.replaceFirst('file://', '');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: EdgeInsets.zero,
+      backgroundColor: Colors.black.withValues(alpha: 0.92),
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            itemCount: widget.photoUrls.length,
+            onPageChanged: (value) => setState(() => _currentIndex = value),
+            itemBuilder: (context, index) {
+              final raw = widget.photoUrls[index];
+              final isLocal = _isLocal(raw);
+              final networkUrl = isLocal ? null : ApiConfig.getImageUrl(raw);
+              return InteractiveViewer(
+                minScale: 0.6,
+                maxScale: 4.0,
+                child: Center(
+                  child: isLocal
+                      ? Image.file(
+                          File(_localPath(raw)),
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(
+                            Icons.broken_image,
+                            color: Colors.white70,
+                            size: 64,
+                          ),
+                        )
+                      : Image.network(
+                          networkUrl!,
+                          fit: BoxFit.contain,
+                          loadingBuilder: (context, child, progress) {
+                            if (progress == null) return child;
+                            return const Center(
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                              ),
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(
+                            Icons.broken_image,
+                            color: Colors.white70,
+                            size: 64,
+                          ),
+                        ),
+                ),
+              );
+            },
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 14,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${_currentIndex + 1}/${widget.photoUrls.length}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 2,
+            right: 6,
+            child: IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(
+                Icons.close,
+                color: Colors.white,
+                size: 30,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
-
 }
-
