@@ -1,35 +1,41 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart' as geolocator;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../providers/attendance_provider.dart';
 
 class PermissionStatusCard extends StatefulWidget {
-  const PermissionStatusCard({Key? key}) : super(key: key);
+  const PermissionStatusCard({super.key});
 
   @override
   State<PermissionStatusCard> createState() => _PermissionStatusCardState();
 }
 
 class _PermissionStatusCardState extends State<PermissionStatusCard> {
+  static bool _sessionPermissionRequested = false;
   PermissionStatus _locationStatus = PermissionStatus.denied;
   PermissionStatus _notificationStatus = PermissionStatus.denied;
-  geolocator.LocationPermission _locationPermission = geolocator.LocationPermission.denied;
-  bool _hasRequestedThisSession = false; // Track if we've requested this session
+  geolocator.LocationPermission _locationPermission =
+      geolocator.LocationPermission.denied;
 
   @override
   void initState() {
     super.initState();
-    debugPrint('[PermissionStatusCard] 🎯 Widget initialized, checking permissions...');
+    debugPrint(
+      '[PermissionStatusCard] 🎯 Widget initialized, checking permissions...',
+    );
 
     // Only request permissions once per app session to avoid conflicts
-    if (!_hasRequestedThisSession) {
-      _hasRequestedThisSession = true;
-      debugPrint('[PermissionStatusCard] 🔄 Requesting permissions for this session...');
+    if (!_sessionPermissionRequested) {
+      _sessionPermissionRequested = true;
+      debugPrint(
+        '[PermissionStatusCard] 🔄 Requesting permissions for this session...',
+      );
       _checkAndRequestPermissions();
     } else {
-      debugPrint('[PermissionStatusCard] ℹ️ Permissions already requested this session, just checking status...');
+      debugPrint(
+        '[PermissionStatusCard] ℹ️ Permissions already requested this session, just checking status...',
+      );
       _checkPermissions();
     }
   }
@@ -43,42 +49,57 @@ class _PermissionStatusCardState extends State<PermissionStatusCard> {
       final locationPermission = await geolocator.Geolocator.checkPermission();
       final notificationStatus = await Permission.notification.status;
 
-      debugPrint('[PermissionStatusCard] 📍 Current location permission: $locationPermission');
-      debugPrint('[PermissionStatusCard] 🔔 Current notification permission: $notificationStatus');
+      debugPrint(
+        '[PermissionStatusCard] 📍 Current location permission: $locationPermission',
+      );
+      debugPrint(
+        '[PermissionStatusCard] 🔔 Current notification permission: $notificationStatus',
+      );
 
       // If location is denied or whileInUse, try to request it
       if (locationPermission == geolocator.LocationPermission.denied ||
           locationPermission == geolocator.LocationPermission.deniedForever) {
-
-        debugPrint('[PermissionStatusCard] 🚨 Location permission denied, requesting immediately...');
+        debugPrint(
+          '[PermissionStatusCard] 🚨 Location permission denied, requesting immediately...',
+        );
 
         // Request location permission first - this will show system dialog
-        final requestedLocation = await geolocator.Geolocator.requestPermission();
-        debugPrint('[PermissionStatusCard] ✅ Location permission request result: $requestedLocation');
+        final requestedLocation =
+            await geolocator.Geolocator.requestPermission();
+        debugPrint(
+          '[PermissionStatusCard] ✅ Location permission request result: $requestedLocation',
+        );
 
         // If still denied after request, check notification
         if (requestedLocation == geolocator.LocationPermission.denied ||
             requestedLocation == geolocator.LocationPermission.deniedForever) {
-
           // Request notification permission if location failed
           if (notificationStatus.isDenied) {
-            debugPrint('[PermissionStatusCard] 🔔 Requesting notification permission...');
-            final requestedNotification = await Permission.notification.request();
-            debugPrint('[PermissionStatusCard] ✅ Notification permission request result: $requestedNotification');
+            debugPrint(
+              '[PermissionStatusCard] 🔔 Requesting notification permission...',
+            );
+            final requestedNotification = await Permission.notification
+                .request();
+            debugPrint(
+              '[PermissionStatusCard] ✅ Notification permission request result: $requestedNotification',
+            );
           }
         }
       } else if (notificationStatus.isDenied) {
         // Location OK, but notification denied - request notification
-        debugPrint('[PermissionStatusCard] 🔔 Location OK but notification denied, requesting notification...');
+        debugPrint(
+          '[PermissionStatusCard] 🔔 Location OK but notification denied, requesting notification...',
+        );
         final requestedNotification = await Permission.notification.request();
-        debugPrint('[PermissionStatusCard] ✅ Notification permission request result: $requestedNotification');
+        debugPrint(
+          '[PermissionStatusCard] ✅ Notification permission request result: $requestedNotification',
+        );
       } else {
         debugPrint('[PermissionStatusCard] ✅ All permissions already granted');
       }
 
       // Re-check all permissions after requests
       await _checkPermissions();
-
     } catch (e) {
       debugPrint('[PermissionStatusCard] ❌ Error requesting permissions: $e');
       // Fall back to just checking permissions
@@ -109,31 +130,30 @@ class _PermissionStatusCardState extends State<PermissionStatusCard> {
 
   bool get _hasAllPermissions {
     return _locationPermission == geolocator.LocationPermission.always &&
-           _notificationStatus.isGranted;
-  }
-
-  bool get _hasBasicPermissions {
-    return (_locationPermission == geolocator.LocationPermission.whileInUse ||
-            _locationPermission == geolocator.LocationPermission.always) &&
-           _notificationStatus.isGranted;
+        _notificationStatus.isGranted;
   }
 
   // Check if card should be shown (only if permissions are permanently denied)
   bool get _shouldShowCard {
-    final locationPermanentlyDenied = _locationPermission == geolocator.LocationPermission.deniedForever;
+    final locationPermanentlyDenied =
+        _locationPermission == geolocator.LocationPermission.deniedForever;
     final locationStatusDenied = _locationStatus.isPermanentlyDenied;
-    final notificationPermanentlyDenied = _notificationStatus.isPermanentlyDenied;
+    final notificationPermanentlyDenied =
+        _notificationStatus.isPermanentlyDenied;
 
     // Show card only if permissions are permanently denied (user chose "Don't ask again")
-    return locationPermanentlyDenied || locationStatusDenied || notificationPermanentlyDenied;
+    return locationPermanentlyDenied ||
+        locationStatusDenied ||
+        notificationPermanentlyDenied;
   }
 
   @override
   Widget build(BuildContext context) {
     final attendanceProvider = Provider.of<AttendanceProvider>(context);
-    final hasActiveCheckIn = attendanceProvider.todayAttendance != null &&
-                           attendanceProvider.todayAttendance!.checkIn != null &&
-                           attendanceProvider.todayAttendance!.checkOut == null;
+    final hasActiveCheckIn =
+        attendanceProvider.todayAttendance != null &&
+        attendanceProvider.todayAttendance!.checkIn != null &&
+        attendanceProvider.todayAttendance!.checkOut == null;
 
     // Only show card if permissions are permanently denied
     // (system permission dialogs will handle initial requests)
@@ -144,9 +164,7 @@ class _PermissionStatusCardState extends State<PermissionStatusCard> {
     return Card(
       margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: EdgeInsets.all(16),
         child: Column(
@@ -169,7 +187,9 @@ class _PermissionStatusCardState extends State<PermissionStatusCard> {
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: _hasAllPermissions ? Colors.green.shade700 : Colors.red.shade700,
+                      color: _hasAllPermissions
+                          ? Colors.green.shade700
+                          : Colors.red.shade700,
                     ),
                   ),
                 ),
@@ -288,11 +308,7 @@ class _PermissionStatusCardState extends State<PermissionStatusCard> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(
-          icon,
-          size: 20,
-          color: Colors.grey.shade600,
-        ),
+        Icon(icon, size: 20, color: Colors.grey.shade600),
         SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -302,10 +318,7 @@ class _PermissionStatusCardState extends State<PermissionStatusCard> {
                 children: [
                   Text(
                     title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                   ),
                   if (isRequired) ...[
                     SizedBox(width: 4),
@@ -412,7 +425,9 @@ class _PermissionStatusCardState extends State<PermissionStatusCard> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Tidak dapat membuka pengaturan otomatis. Buka pengaturan aplikasi secara manual.'),
+            content: Text(
+              'Tidak dapat membuka pengaturan otomatis. Buka pengaturan aplikasi secara manual.',
+            ),
             duration: Duration(seconds: 5),
           ),
         );

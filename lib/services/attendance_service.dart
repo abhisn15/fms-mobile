@@ -32,17 +32,23 @@ class AttendanceService {
     if (siteLat == null || siteLng == null || maxRadiusMeters == null) {
       return;
     }
-    final placementName = site?.name?.trim();
+    final placementName = site?.name.trim();
     final locationLabel = (placementName != null && placementName.isNotEmpty)
         ? placementName
         : 'lokasi penempatan';
-    final requirementLabel = 'dalam radius ${maxRadiusMeters}m dari $locationLabel';
+    final requirementLabel =
+        'dalam radius ${maxRadiusMeters}m dari $locationLabel';
     if (latitude == null || longitude == null) {
       throw Exception(
         'GPS wajib aktif untuk $actionLabel. Pastikan berada $requirementLabel.',
       );
     }
-    final distance = Geolocator.distanceBetween(siteLat, siteLng, latitude, longitude);
+    final distance = Geolocator.distanceBetween(
+      siteLat,
+      siteLng,
+      latitude,
+      longitude,
+    );
     if (distance > maxRadiusMeters.toDouble()) {
       throw Exception(
         'Lokasi di luar radius (${distance.round()}m > ${maxRadiusMeters}m) dari $locationLabel. '
@@ -53,16 +59,10 @@ class AttendanceService {
 
   Future<Map<String, dynamic>> _getClientMeta() async {
     if (_deviceInfoCache != null && _appInfoCache != null) {
-      return {
-        'device': _deviceInfoCache,
-        'app': _appInfoCache,
-      };
+      return {'device': _deviceInfoCache, 'app': _appInfoCache};
     }
     if (_isClientInfoLoading) {
-      return {
-        'device': _deviceInfoCache,
-        'app': _appInfoCache,
-      };
+      return {'device': _deviceInfoCache, 'app': _appInfoCache};
     }
     _isClientInfoLoading = true;
     try {
@@ -73,10 +73,7 @@ class AttendanceService {
     } finally {
       _isClientInfoLoading = false;
     }
-    return {
-      'device': _deviceInfoCache,
-      'app': _appInfoCache,
-    };
+    return {'device': _deviceInfoCache, 'app': _appInfoCache};
   }
 
   Future<Map<String, dynamic>> _loadDeviceInfo() async {
@@ -120,7 +117,9 @@ class AttendanceService {
     };
   }
 
-  Future<Map<String, double>> getRequiredLocation({required String actionLabel}) async {
+  Future<Map<String, double>> getRequiredLocation({
+    required String actionLabel,
+  }) async {
     debugPrint('[AttendanceService] Checking location permission...');
     var permission = await Geolocator.checkPermission();
 
@@ -134,7 +133,9 @@ class AttendanceService {
 
     if (permission == LocationPermission.deniedForever) {
       await Geolocator.openAppSettings();
-      throw Exception('Izin lokasi ditolak permanen. Aktifkan dari pengaturan untuk $actionLabel.');
+      throw Exception(
+        'Izin lokasi ditolak permanen. Aktifkan dari pengaturan untuk $actionLabel.',
+      );
     }
 
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -144,53 +145,123 @@ class AttendanceService {
     }
 
     debugPrint('[AttendanceService] Getting GPS location...');
+
+    Position? lastKnown;
+    try {
+      lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        final now = DateTime.now();
+        final positionTime = lastKnown.timestamp;
+        final ageSeconds = now.difference(positionTime).inSeconds;
+        final isFresh = ageSeconds <= 180;
+        final isAccurate = lastKnown.accuracy <= 150;
+        if (isFresh && isAccurate) {
+          debugPrint(
+            '[AttendanceService] Using fresh last-known GPS: ${lastKnown.latitude}, ${lastKnown.longitude} (accuracy=${lastKnown.accuracy.toStringAsFixed(0)}m, age=${ageSeconds}s)',
+          );
+          return {
+            'latitude': lastKnown.latitude,
+            'longitude': lastKnown.longitude,
+          };
+        }
+      }
+    } catch (e) {
+      debugPrint('[AttendanceService] Failed to read last-known GPS: $e');
+    }
+
     try {
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 15),
+        timeLimit: const Duration(seconds: 12),
       );
-      debugPrint('[AttendanceService] ✓ GPS obtained: ${position.latitude}, ${position.longitude}');
-      return {
-        'latitude': position.latitude,
-        'longitude': position.longitude,
-      };
+      debugPrint(
+        '[AttendanceService] GPS obtained: ${position.latitude}, ${position.longitude}',
+      );
+      return {'latitude': position.latitude, 'longitude': position.longitude};
     } on TimeoutException {
-      throw Exception('Gagal mendapatkan lokasi GPS. Pastikan sinyal GPS bagus lalu coba lagi.');
+      try {
+        final fallbackPosition = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 8),
+        );
+        debugPrint(
+          '[AttendanceService] GPS obtained with fallback accuracy: ${fallbackPosition.latitude}, ${fallbackPosition.longitude}',
+        );
+        return {
+          'latitude': fallbackPosition.latitude,
+          'longitude': fallbackPosition.longitude,
+        };
+      } catch (_) {
+        if (lastKnown != null) {
+          debugPrint(
+            '[AttendanceService] Using stale last-known GPS fallback: ${lastKnown.latitude}, ${lastKnown.longitude}',
+          );
+          return {
+            'latitude': lastKnown.latitude,
+            'longitude': lastKnown.longitude,
+          };
+        }
+        throw Exception(
+          'Gagal mendapatkan lokasi GPS. Pastikan sinyal GPS bagus lalu coba lagi.',
+        );
+      }
     } catch (e) {
+      if (lastKnown != null) {
+        debugPrint(
+          '[AttendanceService] Current GPS failed, fallback last-known: ${lastKnown.latitude}, ${lastKnown.longitude}',
+        );
+        return {
+          'latitude': lastKnown.latitude,
+          'longitude': lastKnown.longitude,
+        };
+      }
       throw Exception('Gagal mendapatkan lokasi GPS. ${e.toString()}');
     }
   }
 
-  Future<AttendancePayload> getAttendance({DateTime? startDate, DateTime? endDate}) async {
+  Future<AttendancePayload> getAttendance({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
     debugPrint('[AttendanceService] Loading attendance data...');
     try {
       String url = ApiConfig.attendance;
       if (startDate != null && endDate != null) {
         final startDateStr = startDate.toIso8601String().split('T')[0];
         final endDateStr = endDate.toIso8601String().split('T')[0];
-        url = '${ApiConfig.attendance}?startDate=$startDateStr&endDate=$endDateStr';
-        debugPrint('[AttendanceService] Using date range: $startDateStr to $endDateStr');
+        url =
+            '${ApiConfig.attendance}?startDate=$startDateStr&endDate=$endDateStr';
+        debugPrint(
+          '[AttendanceService] Using date range: $startDateStr to $endDateStr',
+        );
       }
-      
+
       final response = await _apiService.get(url);
       if (response.statusCode == 200) {
         debugPrint('[AttendanceService] ✓ Attendance data loaded successfully');
         final normalizedResponse = _normalizeApiResponse(response.data);
         final payloadJson = _extractAttendancePayload(normalizedResponse);
         final payload = AttendancePayload.fromJson(payloadJson);
-        debugPrint('[AttendanceService] Today count: ${payload.today.length}, History count: ${payload.recent.length}');
+        debugPrint(
+          '[AttendanceService] Today count: ${payload.today.length}, History count: ${payload.recent.length}',
+        );
         // Log semua status untuk debugging
         for (var record in payload.recent) {
-          debugPrint('[AttendanceService] - ${record.date}: ${record.status} (${record.checkIn ?? '-'} - ${record.checkOut ?? '-'})');
+          debugPrint(
+            '[AttendanceService] - ${record.date}: ${record.status} (${record.checkIn ?? '-'} - ${record.checkOut ?? '-'})',
+          );
         }
         return payload;
       }
       // Handle non-200 responses
       if (response.statusCode != null && response.statusCode! >= 400) {
-        final errorMessage = response.data?['message'] ?? 
-                           response.data?['error'] ?? 
-                           'Gagal memuat data attendance';
-        debugPrint('[AttendanceService] ✗ Error ${response.statusCode}: $errorMessage');
+        final errorMessage =
+            response.data?['message'] ??
+            response.data?['error'] ??
+            'Gagal memuat data attendance';
+        debugPrint(
+          '[AttendanceService] ✗ Error ${response.statusCode}: $errorMessage',
+        );
         throw DioException(
           requestOptions: RequestOptions(path: ApiConfig.attendance),
           response: response,
@@ -233,10 +304,14 @@ class AttendanceService {
       return _extractAttendancePayload(Map<String, dynamic>.from(data));
     }
     if (data is List) {
-      debugPrint('[AttendanceService] Attendance response provided as list, wrapping as history');
+      debugPrint(
+        '[AttendanceService] Attendance response provided as list, wrapping as history',
+      );
       return _wrapHistory(data);
     }
-    throw Exception('Unexpected attendance response format: ${data.runtimeType}');
+    throw Exception(
+      'Unexpected attendance response format: ${data.runtimeType}',
+    );
   }
 
   Map<String, dynamic>? _tryExtractDataField(dynamic candidate) {
@@ -252,7 +327,9 @@ class AttendanceService {
       }
     }
     if (candidate is List) {
-      debugPrint('[AttendanceService] Data field is a list, wrapping as history');
+      debugPrint(
+        '[AttendanceService] Data field is a list, wrapping as history',
+      );
       return _wrapHistory(candidate);
     }
     if (candidate is String) {
@@ -272,7 +349,9 @@ class AttendanceService {
         return _mapFrom(decoded);
       }
       if (decoded is List) {
-        debugPrint('[AttendanceService] Decoded string payload into list, wrapping as history');
+        debugPrint(
+          '[AttendanceService] Decoded string payload into list, wrapping as history',
+        );
         return _wrapHistory(decoded);
       }
     } catch (e) {
@@ -282,10 +361,7 @@ class AttendanceService {
   }
 
   Map<String, dynamic> _wrapHistory(List<dynamic> history) {
-    return {
-      'today': [],
-      'history': history,
-    };
+    return {'today': [], 'history': history};
   }
 
   Map<String, dynamic> _mapFrom(dynamic value) {
@@ -295,7 +371,9 @@ class AttendanceService {
     if (value is Map) {
       return Map<String, dynamic>.from(value);
     }
-    throw Exception('Tidak bisa mengonversi ${value.runtimeType} menjadi Map<String, dynamic>');
+    throw Exception(
+      'Tidak bisa mengonversi ${value.runtimeType} menjadi Map<String, dynamic>',
+    );
   }
 
   Future<ShiftSchedulePayload> getShiftSchedule() async {
@@ -308,10 +386,13 @@ class AttendanceService {
       }
       // Handle non-200 responses
       if (response.statusCode != null && response.statusCode! >= 400) {
-        final errorMessage = response.data?['message'] ?? 
-                           response.data?['error'] ?? 
-                           'Gagal memuat shift schedule';
-        debugPrint('[AttendanceService] ✗ Error ${response.statusCode}: $errorMessage');
+        final errorMessage =
+            response.data?['message'] ??
+            response.data?['error'] ??
+            'Gagal memuat shift schedule';
+        debugPrint(
+          '[AttendanceService] ✗ Error ${response.statusCode}: $errorMessage',
+        );
         throw DioException(
           requestOptions: RequestOptions(path: ApiConfig.shifts),
           response: response,
@@ -337,14 +418,15 @@ class AttendanceService {
         'data': {
           'intervalSeconds': 60, // 1 minute default
           'isEnabled': false,
-        }
+        },
       };
     }
   }
 
   Future<Map<String, dynamic>> checkIn({
     required File photo,
-    String? shiftId, // Opsional - jika tidak ada, gunakan shift yang di-assign atau absen tanpa shift
+    String?
+    shiftId, // Opsional - jika tidak ada, gunakan shift yang di-assign atau absen tanpa shift
     double? latitude,
     double? longitude,
     Site? site,
@@ -359,7 +441,9 @@ class AttendanceService {
         latitude = location['latitude'];
         longitude = location['longitude'];
       } else {
-        debugPrint('[AttendanceService] Using provided GPS: $latitude, $longitude');
+        debugPrint(
+          '[AttendanceService] Using provided GPS: $latitude, $longitude',
+        );
       }
 
       _validateGeofence(
@@ -373,11 +457,15 @@ class AttendanceService {
       try {
         final fileStat = await photo.stat();
         final fileSizeMB = fileStat.size / (1024 * 1024);
-        debugPrint('[AttendanceService] Photo size: ${fileSizeMB.toStringAsFixed(2)} MB');
-        
+        debugPrint(
+          '[AttendanceService] Photo size: ${fileSizeMB.toStringAsFixed(2)} MB',
+        );
+
         // Jika file terlalu besar (>10MB), bisa menyebabkan OOM di device low-end
         if (fileSizeMB > 10) {
-          throw Exception('Foto terlalu besar (${fileSizeMB.toStringAsFixed(2)} MB). Maksimal 10 MB.');
+          throw Exception(
+            'Foto terlalu besar (${fileSizeMB.toStringAsFixed(2)} MB). Maksimal 10 MB.',
+          );
         }
       } catch (e) {
         if (e.toString().contains('terlalu besar')) {
@@ -390,19 +478,21 @@ class AttendanceService {
       // Buat MultipartFile dengan error handling untuk mencegah OOM
       MultipartFile? photoFile;
       try {
-        photoFile = await MultipartFile.fromFile(
-          photo.path,
-        ).timeout(
+        photoFile = await MultipartFile.fromFile(photo.path).timeout(
           const Duration(seconds: 10),
           onTimeout: () {
-            throw Exception('Timeout saat membaca file foto. File mungkin terlalu besar.');
+            throw Exception(
+              'Timeout saat membaca file foto. File mungkin terlalu besar.',
+            );
           },
         );
       } catch (e) {
-        if (e.toString().contains('OutOfMemory') || 
+        if (e.toString().contains('OutOfMemory') ||
             e.toString().contains('out of memory') ||
             e.toString().contains('Memory')) {
-          throw Exception('Memori tidak cukup untuk memproses foto. Coba ambil foto dengan resolusi lebih kecil.');
+          throw Exception(
+            'Memori tidak cukup untuk memproses foto. Coba ambil foto dengan resolusi lebih kecil.',
+          );
         }
         rethrow;
       }
@@ -412,43 +502,52 @@ class AttendanceService {
       final appMeta = clientMeta['app'] as Map<String, dynamic>?;
       final formData = FormData.fromMap({
         'photo': photoFile,
-        if (shiftId != null) 'shiftId': shiftId, // Opsional - hanya kirim jika ada
+        if (shiftId != null)
+          'shiftId': shiftId, // Opsional - hanya kirim jika ada
         if (latitude != null) 'latitude': latitude.toString(),
         if (longitude != null) 'longitude': longitude.toString(),
         if (checkInReason != null && checkInReason.trim().isNotEmpty)
           'checkInReason': checkInReason.trim(),
         if (deviceMeta != null) 'deviceInfo': jsonEncode(deviceMeta),
         if (appMeta != null) 'appInfo': jsonEncode(appMeta),
-        if (deviceMeta?['model'] != null) 'deviceModel': deviceMeta!['model'].toString(),
-        if (deviceMeta?['brand'] != null) 'deviceBrand': deviceMeta!['brand'].toString(),
-        if (deviceMeta?['version'] != null) 'osVersion': deviceMeta!['version'].toString(),
-        if (deviceMeta?['sdkInt'] != null) 'sdkInt': deviceMeta!['sdkInt'].toString(),
-        if (appMeta?['version'] != null) 'appVersion': appMeta!['version'].toString(),
-        if (appMeta?['buildNumber'] != null) 'buildNumber': appMeta!['buildNumber'].toString(),
+        if (deviceMeta?['model'] != null)
+          'deviceModel': deviceMeta!['model'].toString(),
+        if (deviceMeta?['brand'] != null)
+          'deviceBrand': deviceMeta!['brand'].toString(),
+        if (deviceMeta?['version'] != null)
+          'osVersion': deviceMeta!['version'].toString(),
+        if (deviceMeta?['sdkInt'] != null)
+          'sdkInt': deviceMeta!['sdkInt'].toString(),
+        if (appMeta?['version'] != null)
+          'appVersion': appMeta!['version'].toString(),
+        if (appMeta?['buildNumber'] != null)
+          'buildNumber': appMeta!['buildNumber'].toString(),
       });
 
       debugPrint('[AttendanceService] Sending check-in request...');
-      final response = await _apiService.postFormData(
-        ApiConfig.checkIn,
-        formData,
-      ).timeout(
-        const Duration(seconds: 60), // Timeout 60 detik untuk upload
-        onTimeout: () {
-          throw Exception('Upload timeout. Koneksi mungkin lambat atau file terlalu besar.');
-        },
-      );
+      final response = await _apiService
+          .postFormData(ApiConfig.checkIn, formData)
+          .timeout(
+            const Duration(seconds: 60), // Timeout 60 detik untuk upload
+            onTimeout: () {
+              throw Exception(
+                'Upload timeout. Koneksi mungkin lambat atau file terlalu besar.',
+              );
+            },
+          );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         debugPrint('[AttendanceService] ✓ Check-in successful');
         // Safely parse response data
         final responseData = response.data;
-        final data = (responseData is Map && responseData.containsKey('data')) 
-            ? responseData['data'] 
+        final data = (responseData is Map && responseData.containsKey('data'))
+            ? responseData['data']
             : responseData;
-        final message = (responseData is Map && responseData.containsKey('message'))
+        final message =
+            (responseData is Map && responseData.containsKey('message'))
             ? (responseData['message'] as String?)
             : 'Check-in berhasil';
-        
+
         return {
           'success': true,
           'data': data,
@@ -458,9 +557,13 @@ class AttendanceService {
         // Handle error response
         final responseData = response.data;
         final errorMessage = (responseData is Map)
-            ? (responseData['message'] ?? responseData['error'] ?? 'Check-in gagal')
+            ? (responseData['message'] ??
+                  responseData['error'] ??
+                  'Check-in gagal')
             : 'Check-in gagal';
-        debugPrint('[AttendanceService] ✗ Check-in failed: $errorMessage (Status: ${response.statusCode})');
+        debugPrint(
+          '[AttendanceService] ✗ Check-in failed: $errorMessage (Status: ${response.statusCode})',
+        );
         throw DioException(
           requestOptions: RequestOptions(path: ApiConfig.checkIn),
           response: response,
@@ -472,10 +575,7 @@ class AttendanceService {
       final errorMsg = ErrorHandler.getErrorMessage(e);
       debugPrint('[AttendanceService] ✗ Check-in exception: $e');
       debugPrint('[AttendanceService] User-friendly error: $errorMsg');
-      return {
-        'success': false,
-        'message': errorMsg,
-      };
+      return {'success': false, 'message': errorMsg};
     }
   }
 
@@ -496,7 +596,9 @@ class AttendanceService {
         latitude = location['latitude'];
         longitude = location['longitude'];
       } else {
-        debugPrint('[AttendanceService] Using provided GPS: $latitude, $longitude');
+        debugPrint(
+          '[AttendanceService] Using provided GPS: $latitude, $longitude',
+        );
       }
 
       _validateGeofence(
@@ -510,11 +612,15 @@ class AttendanceService {
       try {
         final fileStat = await photo.stat();
         final fileSizeMB = fileStat.size / (1024 * 1024);
-        debugPrint('[AttendanceService] Photo size: ${fileSizeMB.toStringAsFixed(2)} MB');
-        
+        debugPrint(
+          '[AttendanceService] Photo size: ${fileSizeMB.toStringAsFixed(2)} MB',
+        );
+
         // Jika file terlalu besar (>10MB), bisa menyebabkan OOM di device low-end
         if (fileSizeMB > 10) {
-          throw Exception('Foto terlalu besar (${fileSizeMB.toStringAsFixed(2)} MB). Maksimal 10 MB.');
+          throw Exception(
+            'Foto terlalu besar (${fileSizeMB.toStringAsFixed(2)} MB). Maksimal 10 MB.',
+          );
         }
       } catch (e) {
         if (e.toString().contains('terlalu besar')) {
@@ -527,19 +633,21 @@ class AttendanceService {
       // Buat MultipartFile dengan error handling untuk mencegah OOM
       MultipartFile? photoFile;
       try {
-        photoFile = await MultipartFile.fromFile(
-          photo.path,
-        ).timeout(
+        photoFile = await MultipartFile.fromFile(photo.path).timeout(
           const Duration(seconds: 10),
           onTimeout: () {
-            throw Exception('Timeout saat membaca file foto. File mungkin terlalu besar.');
+            throw Exception(
+              'Timeout saat membaca file foto. File mungkin terlalu besar.',
+            );
           },
         );
       } catch (e) {
-        if (e.toString().contains('OutOfMemory') || 
+        if (e.toString().contains('OutOfMemory') ||
             e.toString().contains('out of memory') ||
             e.toString().contains('Memory')) {
-          throw Exception('Memori tidak cukup untuk memproses foto. Coba ambil foto dengan resolusi lebih kecil.');
+          throw Exception(
+            'Memori tidak cukup untuk memproses foto. Coba ambil foto dengan resolusi lebih kecil.',
+          );
         }
         rethrow;
       }
@@ -552,40 +660,49 @@ class AttendanceService {
         if (shiftId != null) 'shiftId': shiftId,
         if (latitude != null) 'latitude': latitude.toString(),
         if (longitude != null) 'longitude': longitude.toString(),
-        if (earlyCheckoutReason != null && earlyCheckoutReason.trim().isNotEmpty)
+        if (earlyCheckoutReason != null &&
+            earlyCheckoutReason.trim().isNotEmpty)
           'earlyCheckoutReason': earlyCheckoutReason.trim(),
         if (deviceMeta != null) 'deviceInfo': jsonEncode(deviceMeta),
         if (appMeta != null) 'appInfo': jsonEncode(appMeta),
-        if (deviceMeta?['model'] != null) 'deviceModel': deviceMeta!['model'].toString(),
-        if (deviceMeta?['brand'] != null) 'deviceBrand': deviceMeta!['brand'].toString(),
-        if (deviceMeta?['version'] != null) 'osVersion': deviceMeta!['version'].toString(),
-        if (deviceMeta?['sdkInt'] != null) 'sdkInt': deviceMeta!['sdkInt'].toString(),
-        if (appMeta?['version'] != null) 'appVersion': appMeta!['version'].toString(),
-        if (appMeta?['buildNumber'] != null) 'buildNumber': appMeta!['buildNumber'].toString(),
+        if (deviceMeta?['model'] != null)
+          'deviceModel': deviceMeta!['model'].toString(),
+        if (deviceMeta?['brand'] != null)
+          'deviceBrand': deviceMeta!['brand'].toString(),
+        if (deviceMeta?['version'] != null)
+          'osVersion': deviceMeta!['version'].toString(),
+        if (deviceMeta?['sdkInt'] != null)
+          'sdkInt': deviceMeta!['sdkInt'].toString(),
+        if (appMeta?['version'] != null)
+          'appVersion': appMeta!['version'].toString(),
+        if (appMeta?['buildNumber'] != null)
+          'buildNumber': appMeta!['buildNumber'].toString(),
       });
 
       debugPrint('[AttendanceService] Sending check-out request...');
-      final response = await _apiService.postFormData(
-        ApiConfig.checkOut,
-        formData,
-      ).timeout(
-        const Duration(seconds: 60), // Timeout 60 detik untuk upload
-        onTimeout: () {
-          throw Exception('Upload timeout. Koneksi mungkin lambat atau file terlalu besar.');
-        },
-      );
+      final response = await _apiService
+          .postFormData(ApiConfig.checkOut, formData)
+          .timeout(
+            const Duration(seconds: 60), // Timeout 60 detik untuk upload
+            onTimeout: () {
+              throw Exception(
+                'Upload timeout. Koneksi mungkin lambat atau file terlalu besar.',
+              );
+            },
+          );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         debugPrint('[AttendanceService] ✓ Check-out successful');
         // Safely parse response data
         final responseData = response.data;
-        final data = (responseData is Map && responseData.containsKey('data')) 
-            ? responseData['data'] 
+        final data = (responseData is Map && responseData.containsKey('data'))
+            ? responseData['data']
             : responseData;
-        final message = (responseData is Map && responseData.containsKey('message'))
+        final message =
+            (responseData is Map && responseData.containsKey('message'))
             ? (responseData['message'] as String?)
             : 'Check-out berhasil';
-        
+
         return {
           'success': true,
           'data': data,
@@ -595,9 +712,13 @@ class AttendanceService {
         // Handle error response
         final responseData = response.data;
         final errorMessage = (responseData is Map)
-            ? (responseData['message'] ?? responseData['error'] ?? 'Check-out gagal')
+            ? (responseData['message'] ??
+                  responseData['error'] ??
+                  'Check-out gagal')
             : 'Check-out gagal';
-        debugPrint('[AttendanceService] ✗ Check-out failed: $errorMessage (Status: ${response.statusCode})');
+        debugPrint(
+          '[AttendanceService] ✗ Check-out failed: $errorMessage (Status: ${response.statusCode})',
+        );
         throw DioException(
           requestOptions: RequestOptions(path: ApiConfig.checkOut),
           response: response,
@@ -609,10 +730,7 @@ class AttendanceService {
       final errorMsg = ErrorHandler.getErrorMessage(e);
       debugPrint('[AttendanceService] ✗ Check-out exception: $e');
       debugPrint('[AttendanceService] User-friendly error: $errorMsg');
-      return {
-        'success': false,
-        'message': errorMsg,
-      };
+      return {'success': false, 'message': errorMsg};
     }
   }
 }

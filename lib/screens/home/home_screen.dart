@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 import '../attendance/attendance_screen.dart';
 import '../activity/activity_screen.dart';
 import '../requests/requests_screen.dart';
@@ -7,8 +8,12 @@ import '../patroli/patroli_screen.dart';
 import '../settings/settings_screen.dart';
 import '../team/team_screen.dart';
 import '../incident_report/incident_report_screen.dart';
+import '../payroll/payroll_slips_screen.dart';
 import '../../widgets/offline_indicator.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/attendance_provider.dart';
+import '../../providers/request_provider.dart';
+import '../../providers/shift_provider.dart';
 import '../../providers/checkpoint_provider.dart';
 import '../../models/user_model.dart';
 import '../../services/global_update_checker.dart';
@@ -31,6 +36,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Animation<Offset>? _moreMenuSlide;
   Animation<double>? _moreMenuFade;
   String? _lastCheckpointUserId;
+  Timer? _homeAutoRefreshTimer;
+  DateTime? _lastHomeRefreshAt;
+  bool _homeRefreshInProgress = false;
 
   // Helper untuk mendapatkan screens. Patroli hanya disertakan bila posisi mengandung kata kunci security.
   List<Widget> _getScreens(bool showPatroli) {
@@ -45,6 +53,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       screens.add(const PatroliScreen());
     }
     screens.add(const TeamScreen());
+    screens.add(const PayrollSlipsScreen());
     screens.add(const SettingsScreen());
     return screens;
   }
@@ -116,6 +125,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     items.add(
       _NavItemData(
         index: showPatroli ? 7 : 6,
+        icon: Icons.receipt_long_outlined,
+        selectedIcon: Icons.receipt_long,
+        label: 'Slip Gaji',
+      ),
+    );
+    items.add(
+      _NavItemData(
+        index: showPatroli ? 8 : 7,
         icon: Icons.settings_outlined,
         selectedIcon: Icons.settings,
         label: 'Pengaturan',
@@ -164,6 +181,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _moreMenuFade = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _moreMenuController!, curve: Curves.easeOut),
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _refreshHomeData(force: true);
+      _ensureHomeAutoRefresh();
+    });
   }
 
   @override
@@ -182,6 +204,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     GlobalUpdateChecker.stopAutoCheck();
+    _homeAutoRefreshTimer?.cancel();
     _pageController?.dispose();
     _moreMenuController?.dispose();
     if (_animationControllers != null) {
@@ -219,7 +242,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     // Animate the new screen
     _animationControllers?[index].forward(from: 0.0);
     if (index == 0) {
+      _refreshHomeData();
+      _ensureHomeAutoRefresh();
       GlobalUpdateChecker.checkNow(context);
+    } else {
+      _homeAutoRefreshTimer?.cancel();
+      _homeAutoRefreshTimer = null;
     }
   }
 
@@ -269,6 +297,77 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       checkpointProvider.clear();
       await checkpointProvider.loadCheckpoint(force: true);
     });
+  }
+
+  void _ensureHomeAutoRefresh() {
+    if (_homeAutoRefreshTimer != null) {
+      return;
+    }
+    _homeAutoRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
+      if (!mounted || _currentIndex != 0) return;
+      _refreshHomeData();
+    });
+  }
+
+  Future<void> _refreshHomeData({bool force = false}) async {
+    if (!mounted || _homeRefreshInProgress) {
+      return;
+    }
+
+    final now = DateTime.now();
+    if (!force && _lastHomeRefreshAt != null) {
+      final diff = now.difference(_lastHomeRefreshAt!);
+      if (diff.inSeconds < 15) {
+        return;
+      }
+    }
+
+    _homeRefreshInProgress = true;
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final attendanceProvider = Provider.of<AttendanceProvider>(
+        context,
+        listen: false,
+      );
+      final shiftProvider = Provider.of<ShiftProvider>(context, listen: false);
+      final requestProvider = Provider.of<RequestProvider>(
+        context,
+        listen: false,
+      );
+      final checkpointProvider = Provider.of<CheckpointProvider>(
+        context,
+        listen: false,
+      );
+
+      final startDate = DateTime(now.year, now.month, 1);
+      try {
+        if (force || authProvider.user == null) {
+          await authProvider.refreshUser();
+        }
+      } catch (_) {}
+      try {
+        await attendanceProvider.loadAttendance(
+          startDate: startDate,
+          endDate: now,
+          forceRefresh: true,
+        );
+      } catch (_) {}
+      try {
+        await shiftProvider.loadShifts();
+      } catch (_) {}
+      try {
+        await requestProvider.loadRequests();
+      } catch (_) {}
+      try {
+        await checkpointProvider.loadCheckpoint(force: true);
+      } catch (_) {}
+
+      _lastHomeRefreshAt = DateTime.now();
+    } catch (e) {
+      debugPrint('[HomeScreen] Home auto-refresh failed: $e');
+    } finally {
+      _homeRefreshInProgress = false;
+    }
   }
 
   @override

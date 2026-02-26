@@ -9,6 +9,7 @@ class RequestProvider with ChangeNotifier {
   RequestPayload? _requestData;
   bool _isLoading = false;
   String? _error;
+  bool _loadRequestsInProgress = false;
 
   RequestPayload? get requestData => _requestData;
   List<LeaveRequest> get requests => _requestData?.requests ?? [];
@@ -16,6 +17,13 @@ class RequestProvider with ChangeNotifier {
   String? get error => _error;
 
   Future<void> loadRequests() async {
+    if (_loadRequestsInProgress) {
+      debugPrint(
+        '[RequestProvider] loadRequests skipped: request already running',
+      );
+      return;
+    }
+    _loadRequestsInProgress = true;
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -28,6 +36,7 @@ class RequestProvider with ChangeNotifier {
       _requestData = null;
     } finally {
       _isLoading = false;
+      _loadRequestsInProgress = false;
       notifyListeners();
     }
   }
@@ -68,4 +77,3 @@ class RequestProvider with ChangeNotifier {
     }
   }
 }
-

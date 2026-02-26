@@ -69,6 +69,8 @@ class _HomeTabState extends State<HomeTab>
   bool _isBuildingUserMarker = false;
   bool _isMapDisposed = false;
   AppLifecycleState _appLifecycleState = AppLifecycleState.resumed;
+  geolocator.Position? _latestGpsPosition;
+  DateTime? _latestGpsFetchedAt;
   DailyShift? _selectedShift;
   final TeamService _teamService = TeamService();
   bool _isLeader = false;
@@ -285,6 +287,11 @@ class _HomeTabState extends State<HomeTab>
             }
           });
       Provider.of<ShiftProvider>(context, listen: false).loadShifts();
+      Provider.of<RequestProvider>(context, listen: false).loadRequests();
+      Provider.of<CheckpointProvider>(
+        context,
+        listen: false,
+      ).loadCheckpoint(force: true);
       if (_shouldRetryCheckInAfterGpsPrompt) {
         final attendanceProvider = Provider.of<AttendanceProvider>(
           context,
@@ -336,9 +343,7 @@ class _HomeTabState extends State<HomeTab>
       if (!mounted || _isDisposed || _isMapDisposed) {
         return;
       }
-      setState(() {
-        _currentMapPosition = LatLng(position!.latitude, position.longitude);
-      });
+      _cacheGpsPosition(position!);
       _tryFitGeofenceCamera();
     } catch (e) {
       debugPrint('[HomeTab] Failed to load map location: $e');
@@ -593,14 +598,17 @@ class _HomeTabState extends State<HomeTab>
 
   Future<bool> _ensureGpsActive({required bool promptSettings}) async {
     if (_gpsCheckInProgress) {
+      if (!promptSettings) {
+        return false;
+      }
       debugPrint('[HomeTab] GPS check already in progress, waiting...');
       var waitedMs = 0;
-      while (_gpsCheckInProgress && waitedMs < 4000) {
-        await Future.delayed(const Duration(milliseconds: 150));
-        waitedMs += 150;
+      while (_gpsCheckInProgress && waitedMs < 6000) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        waitedMs += 200;
       }
       if (_gpsCheckInProgress) {
-        if (mounted) {
+        if (mounted && promptSettings) {
           ToastHelper.showWarning(
             context,
             'Sedang memeriksa GPS. Coba lagi sebentar.',
@@ -615,13 +623,17 @@ class _HomeTabState extends State<HomeTab>
       debugPrint('[HomeTab] Checking location permission...');
       var permission = await geolocator.Geolocator.checkPermission();
       if (permission == geolocator.LocationPermission.denied) {
+        if (!promptSettings) {
+          debugPrint('[HomeTab] Location permission still denied (pre-check)');
+          return false;
+        }
         debugPrint('[HomeTab] Requesting location permission...');
         permission = await geolocator.Geolocator.requestPermission();
       }
 
       if (permission == geolocator.LocationPermission.denied) {
         debugPrint('[HomeTab] Location permission denied');
-        if (mounted) {
+        if (mounted && promptSettings) {
           ToastHelper.showWarning(
             context,
             'Izin lokasi ditolak. Aktifkan GPS untuk absensi.',
@@ -636,7 +648,7 @@ class _HomeTabState extends State<HomeTab>
           _gpsPrompted = true;
           await geolocator.Geolocator.openAppSettings();
         }
-        if (mounted) {
+        if (mounted && promptSettings) {
           ToastHelper.showWarning(
             context,
             'Izin lokasi ditolak permanen. Aktifkan dari pengaturan.',
@@ -654,7 +666,7 @@ class _HomeTabState extends State<HomeTab>
           _gpsPrompted = true;
           await geolocator.Geolocator.openLocationSettings();
         }
-        if (mounted) {
+        if (mounted && promptSettings) {
           ToastHelper.showWarning(
             context,
             'GPS belum aktif. Aktifkan lokasi untuk absensi.',
@@ -663,13 +675,90 @@ class _HomeTabState extends State<HomeTab>
         return false;
       }
 
-      debugPrint('[HomeTab] GPS is ready!');
-      _loadCurrentLocationForMap();
+      final position = await _resolveCurrentPosition();
+      if (position == null) {
+        debugPrint('[HomeTab] GPS service ready but fix is unavailable');
+        if (promptSettings && mounted) {
+          ToastHelper.showWarning(
+            context,
+            'GPS aktif, tetapi lokasi belum terbaca. Coba lagi sebentar.',
+          );
+        }
+        return !promptSettings;
+      }
+
+      _cacheGpsPosition(position);
+      debugPrint(
+        '[HomeTab] GPS is ready: ${position.latitude}, ${position.longitude} (accuracy=${position.accuracy.toStringAsFixed(0)}m)',
+      );
+      _loadCurrentLocationForMap(force: true);
       _gpsPrompted = false;
       return true;
     } finally {
       _gpsCheckInProgress = false;
     }
+  }
+
+  void _cacheGpsPosition(geolocator.Position position) {
+    _latestGpsPosition = position;
+    _latestGpsFetchedAt = DateTime.now();
+    if (!mounted || _isDisposed || _isMapDisposed) {
+      return;
+    }
+    setState(() {
+      _currentMapPosition = LatLng(position.latitude, position.longitude);
+    });
+  }
+
+  Map<String, double>? _consumeRecentGpsCoordinates({int maxAgeSeconds = 45}) {
+    final position = _latestGpsPosition;
+    final fetchedAt = _latestGpsFetchedAt;
+    if (position == null || fetchedAt == null) {
+      return null;
+    }
+    final age = DateTime.now().difference(fetchedAt).inSeconds;
+    if (age > maxAgeSeconds) {
+      return null;
+    }
+    return {'lat': position.latitude, 'lng': position.longitude};
+  }
+
+  Future<geolocator.Position?> _resolveCurrentPosition() async {
+    geolocator.Position? lastKnown;
+    try {
+      lastKnown = await geolocator.Geolocator.getLastKnownPosition();
+    } catch (e) {
+      debugPrint('[HomeTab] Failed to read last known position: $e');
+    }
+
+    final now = DateTime.now();
+    if (lastKnown != null) {
+      final positionTime = lastKnown.timestamp ?? now;
+      final ageMinutes = now.difference(positionTime).inMinutes;
+      if (ageMinutes <= 5 && lastKnown.accuracy <= 120) {
+        return lastKnown;
+      }
+    }
+
+    try {
+      return await geolocator.Geolocator.getCurrentPosition(
+        desiredAccuracy: geolocator.LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 12),
+      );
+    } catch (e) {
+      debugPrint('[HomeTab] High-accuracy GPS fetch failed: $e');
+    }
+
+    try {
+      return await geolocator.Geolocator.getCurrentPosition(
+        desiredAccuracy: geolocator.LocationAccuracy.medium,
+        timeLimit: const Duration(seconds: 8),
+      );
+    } catch (e) {
+      debugPrint('[HomeTab] Medium-accuracy GPS fetch failed: $e');
+    }
+
+    return lastKnown;
   }
 
   DateTime? _parseCheckInDateTime(AttendanceRecord? today) {
@@ -1902,10 +1991,17 @@ class _HomeTabState extends State<HomeTab>
         debugPrint('[HomeTab] Photo captured: ${photo.path}');
         debugPrint('[HomeTab] Submitting check-in...');
         try {
+          final refreshedPosition = await _resolveCurrentPosition();
+          if (refreshedPosition != null) {
+            _cacheGpsPosition(refreshedPosition);
+          }
+          final gpsCoordinates = _consumeRecentGpsCoordinates();
           final success = await attendanceProvider.checkIn(
             photo: photo,
             shiftId: selectedShift?.id,
             checkInReason: checkInReason,
+            latitude: gpsCoordinates?['lat'],
+            longitude: gpsCoordinates?['lng'],
           );
 
           if (mounted) {
@@ -2048,10 +2144,17 @@ class _HomeTabState extends State<HomeTab>
         debugPrint('[HomeTab] Submitting check-out...');
 
         try {
+          final refreshedPosition = await _resolveCurrentPosition();
+          if (refreshedPosition != null) {
+            _cacheGpsPosition(refreshedPosition);
+          }
+          final gpsCoordinates = _consumeRecentGpsCoordinates();
           final success = await attendanceProvider.checkOut(
             photo: photo,
             shiftId: today?.shiftId,
             earlyCheckoutReason: earlyCheckoutReason,
+            latitude: gpsCoordinates?['lat'],
+            longitude: gpsCoordinates?['lng'],
           );
 
           if (mounted) {
