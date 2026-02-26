@@ -71,6 +71,9 @@ class ApiConfig {
   static const String essCheckpointComplete =
       '/api/ess/activity/checkpoint-complete';
   static const String essSiteFlags = '/api/ess/site-flags';
+  static const String essPayrollSlips = '/api/ess/payroll-slips';
+  static String essPayrollSlipPdf(String id) =>
+      '/api/ess/payroll-slips/$id/pdf';
 
   // Leader endpoints
   static const String leaderTeams = '/api/leader/teams';
