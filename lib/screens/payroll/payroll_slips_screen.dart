@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -18,40 +19,71 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
   final PayrollSlipService _payrollSlipService = PayrollSlipService();
   final TextEditingController _searchController = TextEditingController();
   final DateFormat _createdAtFormat = DateFormat('dd MMM yyyy, HH:mm', 'id_ID');
+  static const int _pageSize = 20;
+  Timer? _searchDebounce;
 
   bool _isLoading = true;
   String? _error;
-  List<PayrollSlip> _allSlips = [];
-  List<PayrollSlip> _filteredSlips = [];
+  List<PayrollSlip> _slips = [];
+  int _page = 1;
+  int _totalPages = 0;
+  int _totalItems = 0;
+  DateTime? _periodStartDate;
+  DateTime? _periodEndDate;
 
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(_applySearchFilter);
+    _searchController.addListener(_onSearchChanged);
     _loadPayrollSlips();
   }
 
   @override
   void dispose() {
-    _searchController.removeListener(_applySearchFilter);
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
-  Future<void> _loadPayrollSlips() async {
+  String? _toDateParam(DateTime? date) {
+    if (date == null) return null;
+    final year = date.year.toString().padLeft(4, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      _loadPayrollSlips(targetPage: 1);
+    });
+  }
+
+  Future<void> _loadPayrollSlips({int? targetPage}) async {
+    final nextPage = targetPage ?? _page;
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
-      final items = await _payrollSlipService.getPayrollSlips();
+      final result = await _payrollSlipService.getPayrollSlips(
+        page: nextPage,
+        limit: _pageSize,
+        search: _searchController.text,
+        periodStart: _toDateParam(_periodStartDate),
+        periodEnd: _toDateParam(_periodEndDate),
+      );
       if (!mounted) return;
       setState(() {
-        _allSlips = items;
-        _filteredSlips = items;
+        _slips = result.items;
+        _page = result.page;
+        _totalPages = result.totalPages;
+        _totalItems = result.total;
       });
-      _applySearchFilter();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -64,31 +96,6 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
         });
       }
     }
-  }
-
-  void _applySearchFilter() {
-    final query = _searchController.text.trim().toLowerCase();
-    if (query.isEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _filteredSlips = List<PayrollSlip>.from(_allSlips);
-      });
-      return;
-    }
-
-    final filtered = _allSlips.where((slip) {
-      final period = slip.displayPeriod.toLowerCase();
-      final fileName = slip.fileName.toLowerCase();
-      final periodKey = slip.periodKey.toLowerCase();
-      return period.contains(query) ||
-          fileName.contains(query) ||
-          periodKey.contains(query);
-    }).toList();
-
-    if (!mounted) return;
-    setState(() {
-      _filteredSlips = filtered;
-    });
   }
 
   String _formatFileSize(int bytes) {
@@ -112,6 +119,34 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _pickDate({required bool isStart}) async {
+    final initial = isStart
+        ? (_periodStartDate ?? DateTime.now())
+        : (_periodEndDate ?? _periodStartDate ?? DateTime.now());
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2018, 1, 1),
+      lastDate: DateTime(2100, 12, 31),
+      helpText: isStart ? 'Pilih tanggal awal' : 'Pilih tanggal akhir',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (isStart) {
+        _periodStartDate = picked;
+        if (_periodEndDate != null && _periodEndDate!.isBefore(picked)) {
+          _periodEndDate = picked;
+        }
+      } else {
+        _periodEndDate = picked;
+        if (_periodStartDate != null && _periodStartDate!.isAfter(picked)) {
+          _periodStartDate = picked;
+        }
+      }
+    });
+    await _loadPayrollSlips(targetPage: 1);
   }
 
   Widget _buildBody() {
@@ -149,7 +184,7 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
       );
     }
 
-    if (_allSlips.isEmpty) {
+    if (_slips.isEmpty) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
@@ -158,25 +193,58 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
       );
     }
 
-    if (_filteredSlips.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Data tidak ditemukan. Ubah kata kunci pencarian.',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-    }
-
     return RefreshIndicator(
-      onRefresh: _loadPayrollSlips,
-      child: ListView.builder(
+      onRefresh: () => _loadPayrollSlips(targetPage: _page),
+      child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: _filteredSlips.length,
+        itemCount: _slips.length + 1,
+        separatorBuilder: (context, index) => const SizedBox(height: 2),
         itemBuilder: (context, index) {
-          final slip = _filteredSlips[index];
+          if (index == _slips.length) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _page > 1
+                          ? () => _loadPayrollSlips(targetPage: _page - 1)
+                          : null,
+                      icon: const Icon(Icons.chevron_left),
+                      label: const Text('Sebelumnya'),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Halaman $_page / ${_totalPages <= 0 ? 1 : _totalPages}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        Text(
+                          'Total $_totalItems data',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: (_totalPages > 0 && _page < _totalPages)
+                          ? () => _loadPayrollSlips(targetPage: _page + 1)
+                          : null,
+                      icon: const Icon(Icons.chevron_right),
+                      label: const Text('Berikutnya'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final slip = _slips[index];
           return Card(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: ListTile(
@@ -210,6 +278,11 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    String formatDateLabel(DateTime? date) {
+      if (date == null) return 'Pilih tanggal';
+      return DateFormat('dd MMM yyyy', 'id_ID').format(date);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Slip Gaji'),
@@ -238,12 +311,53 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
                         icon: const Icon(Icons.close),
                         onPressed: () {
                           _searchController.clear();
-                          _applySearchFilter();
+                          _loadPayrollSlips(targetPage: 1);
                         },
                       ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _pickDate(isStart: true),
+                    icon: const Icon(Icons.event_outlined, size: 18),
+                    label: Text('Dari: ${formatDateLabel(_periodStartDate)}'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _pickDate(isStart: false),
+                    icon: const Icon(Icons.event_available_outlined, size: 18),
+                    label: Text('Sampai: ${formatDateLabel(_periodEndDate)}'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: (_periodStartDate != null || _periodEndDate != null)
+                    ? () async {
+                        setState(() {
+                          _periodStartDate = null;
+                          _periodEndDate = null;
+                        });
+                        await _loadPayrollSlips(targetPage: 1);
+                      }
+                    : null,
+                icon: const Icon(Icons.restart_alt),
+                label: const Text('Reset rentang tanggal'),
               ),
             ),
           ),
