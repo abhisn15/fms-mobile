@@ -1,9 +1,8 @@
-import 'dart:typed_data';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../models/payroll_slip_model.dart';
 import '../../services/payroll_slip_service.dart';
@@ -113,7 +112,7 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
   Future<void> _openSlip(PayrollSlip slip) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _PayrollSlipPdfViewerScreen(
+        builder: (_) => _PayrollSlipWebViewScreen(
           slip: slip,
           payrollSlipService: _payrollSlipService,
         ),
@@ -368,57 +367,82 @@ class _PayrollSlipsScreenState extends State<PayrollSlipsScreen> {
   }
 }
 
-class _PayrollSlipPdfViewerScreen extends StatefulWidget {
+class _PayrollSlipWebViewScreen extends StatefulWidget {
   final PayrollSlip slip;
   final PayrollSlipService payrollSlipService;
 
-  const _PayrollSlipPdfViewerScreen({
+  const _PayrollSlipWebViewScreen({
     required this.slip,
     required this.payrollSlipService,
   });
 
   @override
-  State<_PayrollSlipPdfViewerScreen> createState() =>
-      _PayrollSlipPdfViewerScreenState();
+  State<_PayrollSlipWebViewScreen> createState() =>
+      _PayrollSlipWebViewScreenState();
 }
 
-class _PayrollSlipPdfViewerScreenState
-    extends State<_PayrollSlipPdfViewerScreen> {
-  Uint8List? _pdfBytes;
+class _PayrollSlipWebViewScreenState extends State<_PayrollSlipWebViewScreen> {
+  WebViewController? _webViewController;
   String? _error;
-  bool _isLoading = true;
+  bool _isPageLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadPdf();
+    _initWebView();
   }
 
-  Future<void> _loadPdf() async {
+  Future<void> _initWebView() async {
     setState(() {
-      _isLoading = true;
       _error = null;
+      _webViewController = null;
+      _isPageLoading = true;
     });
 
     try {
-      final bytes = await widget.payrollSlipService.getPayrollSlipPdfBytes(
+      final url = await widget.payrollSlipService.getPayrollSlipWebViewUrl(
         widget.slip,
       );
+      final controller = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setBackgroundColor(const Color(0xFFFFFFFF))
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onPageStarted: (_) {
+              if (!mounted) return;
+              setState(() {
+                _isPageLoading = true;
+              });
+            },
+            onPageFinished: (_) {
+              if (!mounted) return;
+              setState(() {
+                _isPageLoading = false;
+              });
+            },
+            onWebResourceError: (error) {
+              if (!mounted) return;
+              setState(() {
+                _error = error.description.isEmpty
+                    ? 'Gagal memuat slip gaji di webview.'
+                    : error.description;
+                _isPageLoading = false;
+              });
+            },
+          ),
+        )
+        ..loadRequest(Uri.parse(url));
+
       if (!mounted) return;
       setState(() {
-        _pdfBytes = bytes;
+        _webViewController = controller;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString().replaceAll('Exception: ', '');
+        _isPageLoading = false;
       });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
     }
   }
 
@@ -431,13 +455,18 @@ class _PayrollSlipPdfViewerScreenState
           IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),
-            onPressed: _loadPdf,
+            onPressed: () {
+              final controller = _webViewController;
+              if (controller != null) {
+                controller.reload();
+              } else {
+                _initWebView();
+              }
+            },
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
+      body: _error != null
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -457,7 +486,7 @@ class _PayrollSlipPdfViewerScreenState
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(
-                      onPressed: _loadPdf,
+                      onPressed: _initWebView,
                       icon: const Icon(Icons.refresh),
                       label: const Text('Coba Lagi'),
                     ),
@@ -465,9 +494,15 @@ class _PayrollSlipPdfViewerScreenState
                 ),
               ),
             )
-          : _pdfBytes == null
-          ? const Center(child: Text('File slip gaji tidak tersedia.'))
-          : SfPdfViewer.memory(_pdfBytes!),
+          : _webViewController == null
+          ? const Center(child: CircularProgressIndicator())
+          : Stack(
+              children: [
+                WebViewWidget(controller: _webViewController!),
+                if (_isPageLoading)
+                  const Center(child: CircularProgressIndicator()),
+              ],
+            ),
     );
   }
 }

@@ -25,6 +25,69 @@ class PayrollSlipListResult {
 class PayrollSlipService {
   final ApiService _apiService = ApiService();
 
+  bool _looksLikePdf(Uint8List bytes) {
+    if (bytes.length < 5) return false;
+    return bytes[0] == 0x25 && // %
+        bytes[1] == 0x50 && // P
+        bytes[2] == 0x44 && // D
+        bytes[3] == 0x46 && // F
+        bytes[4] == 0x2D; // -
+  }
+
+  String _normalizeEndpoint(String endpoint) {
+    final safe = endpoint.trim();
+    if (safe.isEmpty) return endpoint;
+    if (safe.startsWith('http://') || safe.startsWith('https://')) {
+      return safe;
+    }
+    if (safe.startsWith('/')) {
+      return safe;
+    }
+    return '/$safe';
+  }
+
+  String getPayrollSlipPdfUrl(PayrollSlip slip) {
+    final endpoint = slip.fileUrl.trim().isNotEmpty
+        ? slip.fileUrl.trim()
+        : ApiConfig.essPayrollSlipPdf(slip.id);
+    if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+      return endpoint;
+    }
+    if (endpoint.startsWith('/')) {
+      return ApiConfig.getFullUrl(endpoint);
+    }
+    return ApiConfig.getFullUrl('/$endpoint');
+  }
+
+  Future<String> getPayrollSlipWebViewUrl(PayrollSlip slip) async {
+    final response = await _apiService.get(
+      ApiConfig.essPayrollSlipWebviewToken(slip.id),
+    );
+    if (response.statusCode != 200) {
+      final message = response.data is Map<String, dynamic>
+          ? (response.data['message']?.toString() ??
+                'Gagal menyiapkan token webview slip gaji')
+          : 'Gagal menyiapkan token webview slip gaji';
+      throw Exception(message);
+    }
+
+    if (response.data is! Map<String, dynamic>) {
+      throw Exception('Respons token webview tidak valid');
+    }
+
+    final payload = response.data as Map<String, dynamic>;
+    final data = payload['data'];
+    if (data is! Map<String, dynamic>) {
+      throw Exception('Payload token webview tidak valid');
+    }
+
+    final url = data['url']?.toString().trim();
+    if (url == null || url.isEmpty) {
+      throw Exception('URL webview slip gaji tidak tersedia');
+    }
+    return url;
+  }
+
   Future<PayrollSlipListResult> getPayrollSlips({
     int page = 1,
     int limit = 20,
@@ -120,11 +183,25 @@ class PayrollSlipService {
     final endpoint = slip.fileUrl.trim().isNotEmpty
         ? slip.fileUrl
         : ApiConfig.essPayrollSlipPdf(slip.id);
+    Future<Response> fetch(String path) {
+      return _apiService.get(
+        _normalizeEndpoint(path),
+        responseType: ResponseType.bytes,
+      );
+    }
 
-    final response = await _apiService.get(
-      endpoint,
-      responseType: ResponseType.bytes,
-    );
+    Response response = await fetch(endpoint);
+    if (response.statusCode != null &&
+        response.statusCode! >= 300 &&
+        response.statusCode! < 400) {
+      final redirectTo = response.headers.value('location');
+      if (redirectTo == null || redirectTo.trim().isEmpty) {
+        throw Exception(
+          'Slip gaji tidak dapat dibuka (redirect tanpa lokasi).',
+        );
+      }
+      response = await fetch(redirectTo.trim());
+    }
 
     if (response.statusCode != 200) {
       final message = response.data is Map<String, dynamic>
@@ -135,8 +212,16 @@ class PayrollSlipService {
     }
 
     final data = response.data;
-    if (data is Uint8List) return data;
-    if (data is List<int>) return Uint8List.fromList(data);
-    throw Exception('Format file slip gaji tidak valid');
+    final bytes = data is Uint8List
+        ? data
+        : data is List<int>
+        ? Uint8List.fromList(data)
+        : null;
+    if (bytes == null || !_looksLikePdf(bytes)) {
+      throw Exception(
+        'Format slip gaji tidak valid. Pastikan file slip berupa PDF.',
+      );
+    }
+    return bytes;
   }
 }

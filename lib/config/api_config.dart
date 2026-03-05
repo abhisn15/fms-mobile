@@ -74,6 +74,8 @@ class ApiConfig {
   static const String essPayrollSlips = '/api/ess/payroll-slips';
   static String essPayrollSlipPdf(String id) =>
       '/api/ess/payroll-slips/$id/pdf';
+  static String essPayrollSlipWebviewToken(String id) =>
+      '/api/ess/payroll-slips/$id/webview-token';
 
   // Leader endpoints
   static const String leaderTeams = '/api/leader/teams';
