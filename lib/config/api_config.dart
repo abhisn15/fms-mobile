@@ -44,6 +44,12 @@ class ApiConfig {
   static const String attendance = '/api/ess/attendance';
   static const String checkIn = '/api/ess/attendance/check-in';
   static const String checkOut = '/api/ess/attendance/check-out';
+  static const String attendanceSessionCurrent =
+      '/api/ess/attendance/session/current';
+  static const String attendanceBreakStatus =
+      '/api/ess/attendance/break/status';
+  static const String attendanceBreakStart = '/api/ess/attendance/break/start';
+  static const String attendanceBreakEnd = '/api/ess/attendance/break/end';
   static const String shifts = '/api/ess/shifts';
   static const String shiftSchedule = '/api/ess/shifts/schedule';
   static const String activity = '/api/ess/activity';

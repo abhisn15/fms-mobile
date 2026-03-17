@@ -18,10 +18,13 @@ class AttendanceProvider with ChangeNotifier {
   final AuthService _authService = AuthService();
   ConnectivityProvider? _connectivityProvider;
   AttendancePayload? _attendanceData;
+  AttendanceBreakState? _breakState;
   bool _isLoading = false;
   String? _error;
   bool _isOfflineMode = false;
   bool _syncPendingInProgress = false;
+  bool _isBreakLoading = false;
+  bool _breakActionInProgress = false;
 
   // Flags to prevent double initialization
   bool _backgroundTrackingInitialized = false;
@@ -47,7 +50,10 @@ class AttendanceProvider with ChangeNotifier {
 
   AttendanceRecord? get todayAttendance => activeAttendance;
   List<AttendanceRecord> get recentAttendance => _attendanceData?.recent ?? [];
+  AttendanceBreakState? get breakState => _breakState;
   bool get isLoading => _isLoading;
+  bool get isBreakLoading => _isBreakLoading;
+  bool get isBreakActionInProgress => _breakActionInProgress;
   String? get error => _error;
   bool get isOfflineMode => _isOfflineMode;
   bool get isRealtimeTracking => _realtimeService.isTracking;
@@ -303,6 +309,46 @@ class AttendanceProvider with ChangeNotifier {
     }
   }
 
+  Future<void> loadBreakState({bool notify = true}) async {
+    final today = todayAttendance;
+    if (today == null || today.checkIn == null || today.checkOut != null) {
+      _breakState = null;
+      _isBreakLoading = false;
+      if (notify) {
+        notifyListeners();
+      }
+      return;
+    }
+
+    final isConnected = _connectivityProvider?.isConnected ?? true;
+    if (!isConnected) {
+      if (notify) {
+        notifyListeners();
+      }
+      return;
+    }
+
+    if (_isBreakLoading) {
+      return;
+    }
+
+    _isBreakLoading = true;
+    if (notify) {
+      notifyListeners();
+    }
+
+    try {
+      _breakState = await _attendanceService.getAttendanceBreakState();
+    } catch (e) {
+      debugPrint('[AttendanceProvider] Failed to load break state: $e');
+    } finally {
+      _isBreakLoading = false;
+      if (notify) {
+        notifyListeners();
+      }
+    }
+  }
+
   Future<void> loadAttendance({
     DateTime? startDate,
     DateTime? endDate,
@@ -449,8 +495,12 @@ class AttendanceProvider with ChangeNotifier {
       // Only initialize tracking services if we don't have attendance data yet
       // This prevents double initialization on every loadAttendance call
       if (todayAttendance != null) {
+        await loadBreakState(notify: false);
         await _ensureRealtimeTracking();
         await ensureBackgroundTracking();
+      } else {
+        _breakState = null;
+        _isBreakLoading = false;
       }
 
       notifyListeners();
@@ -1048,6 +1098,94 @@ class AttendanceProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       _checkOutInProgress = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> startBreak() async {
+    if (_breakActionInProgress) {
+      return {
+        'success': false,
+        'message': 'Permintaan istirahat sedang diproses',
+      };
+    }
+
+    final isConnected = _connectivityProvider?.isConnected ?? true;
+    if (!isConnected) {
+      return {
+        'success': false,
+        'message': 'Mulai istirahat hanya bisa dilakukan saat online',
+      };
+    }
+
+    _error = null;
+    _breakActionInProgress = true;
+    notifyListeners();
+
+    try {
+      final result = await _attendanceService.startAttendanceBreak();
+      if (result['success'] == true) {
+        final now = DateTime.now();
+        final startDate = DateTime(now.year, now.month, 1);
+        await loadAttendance(
+          startDate: startDate,
+          endDate: now,
+          forceRefresh: true,
+        );
+      } else {
+        _error = result['message'] as String?;
+      }
+      return result;
+    } catch (e) {
+      _error = ErrorHandler.getErrorMessage(e);
+      return {'success': false, 'message': _error};
+    } finally {
+      _breakActionInProgress = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> endBreak({String? reason}) async {
+    if (_breakActionInProgress) {
+      return {
+        'success': false,
+        'message': 'Permintaan istirahat sedang diproses',
+      };
+    }
+
+    final isConnected = _connectivityProvider?.isConnected ?? true;
+    if (!isConnected) {
+      return {
+        'success': false,
+        'message': 'Selesai istirahat hanya bisa dilakukan saat online',
+      };
+    }
+
+    _error = null;
+    _breakActionInProgress = true;
+    notifyListeners();
+
+    try {
+      final result = await _attendanceService.endAttendanceBreak(
+        reason: reason,
+      );
+      if (result['success'] == true) {
+        final now = DateTime.now();
+        final startDate = DateTime(now.year, now.month, 1);
+        await loadAttendance(
+          startDate: startDate,
+          endDate: now,
+          forceRefresh: true,
+        );
+      } else {
+        _error = result['message'] as String?;
+      }
+      return result;
+    } catch (e) {
+      _error = ErrorHandler.getErrorMessage(e);
+      return {'success': false, 'message': _error};
+    } finally {
+      _breakActionInProgress = false;
       notifyListeners();
     }
   }

@@ -276,6 +276,100 @@ class AttendanceService {
     }
   }
 
+  Future<AttendanceBreakState> getAttendanceBreakState() async {
+    try {
+      final response = await _apiService.get(ApiConfig.attendanceSessionCurrent);
+      if (response.statusCode == 200) {
+        final data = response.data;
+        final payload = (data is Map && data['data'] is Map<String, dynamic>)
+            ? data['data'] as Map<String, dynamic>
+            : <String, dynamic>{};
+        return AttendanceBreakState.fromJson(payload);
+      }
+
+      // Backward compatibility fallback.
+      final legacyResponse = await _apiService.get(ApiConfig.attendanceBreakStatus);
+      if (legacyResponse.statusCode == 200) {
+        final data = legacyResponse.data;
+        final payload = (data is Map && data['data'] is Map<String, dynamic>)
+            ? data['data'] as Map<String, dynamic>
+            : <String, dynamic>{};
+        return AttendanceBreakState.fromJson(payload);
+      }
+
+      throw Exception(
+        (response.data is Map && response.data['message'] != null)
+            ? response.data['message'].toString()
+            : 'Gagal memuat status istirahat',
+      );
+    } catch (e) {
+      debugPrint('[AttendanceService] getAttendanceBreakState error: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> startAttendanceBreak() async {
+    try {
+      final idempotencyKey =
+          'mobile-break-start-${DateTime.now().microsecondsSinceEpoch}';
+      final response = await _apiService.post(
+        ApiConfig.attendanceBreakStart,
+        headers: {'Idempotency-Key': idempotencyKey},
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {
+          'success': true,
+          'data': response.data is Map ? response.data['data'] : null,
+          'message': response.data is Map
+              ? (response.data['message'] ?? 'Istirahat dimulai')
+              : 'Istirahat dimulai',
+        };
+      }
+      return {
+        'success': false,
+        'message': response.data is Map
+            ? (response.data['message'] ?? 'Gagal memulai istirahat')
+            : 'Gagal memulai istirahat',
+      };
+    } catch (e) {
+      debugPrint('[AttendanceService] startAttendanceBreak error: $e');
+      return {'success': false, 'message': ErrorHandler.getErrorMessage(e)};
+    }
+  }
+
+  Future<Map<String, dynamic>> endAttendanceBreak({String? reason}) async {
+    try {
+      final idempotencyKey =
+          'mobile-break-end-${DateTime.now().microsecondsSinceEpoch}';
+      final response = await _apiService.post(
+        ApiConfig.attendanceBreakEnd,
+        data: {
+          if (reason != null && reason.trim().isNotEmpty)
+            'reason': reason.trim(),
+        },
+        headers: {'Idempotency-Key': idempotencyKey},
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {
+          'success': true,
+          'data': response.data is Map ? response.data['data'] : null,
+          'message': response.data is Map
+              ? (response.data['message'] ?? 'Istirahat selesai')
+              : 'Istirahat selesai',
+        };
+      }
+      return {
+        'success': false,
+        'message': response.data is Map
+            ? (response.data['message'] ?? 'Gagal menyelesaikan istirahat')
+            : 'Gagal menyelesaikan istirahat',
+      };
+    } catch (e) {
+      debugPrint('[AttendanceService] endAttendanceBreak error: $e');
+      return {'success': false, 'message': ErrorHandler.getErrorMessage(e)};
+    }
+  }
+
   dynamic _normalizeApiResponse(dynamic data) {
     if (data is String) {
       final trimmed = data.trim();

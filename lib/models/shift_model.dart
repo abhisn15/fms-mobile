@@ -7,6 +7,9 @@ class DailyShift {
   final String? color;
   final bool isWfh;
   final ShiftPattern? pattern;
+  final bool hasBreak;
+  final String? breakStartTime;
+  final String? breakEndTime;
   /// workday | off — untuk filter monitoring: hanya tampilkan yang workday
   final String? dayType;
 
@@ -19,6 +22,9 @@ class DailyShift {
     this.color,
     this.isWfh = false,
     this.pattern,
+    this.hasBreak = false,
+    this.breakStartTime,
+    this.breakEndTime,
     this.dayType,
   });
 
@@ -51,6 +57,9 @@ class DailyShift {
       pattern: json['pattern'] != null
           ? ShiftPattern.fromJson(json['pattern'] as Map<String, dynamic>)
           : null,
+      hasBreak: json['hasBreak'] as bool? ?? false,
+      breakStartTime: json['breakStartTime'] as String?,
+      breakEndTime: json['breakEndTime'] as String?,
       dayType: dayType,
     );
   }

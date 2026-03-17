@@ -108,6 +108,62 @@ class _MyShiftScreenState extends State<MyShiftScreen> {
     return Color(int.parse('FF${shift.color!.replaceAll('#', '')}', radix: 16));
   }
 
+  int? _parseTimeToMinutes(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    final parts = value.split(':');
+    if (parts.length < 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    return (hour * 60) + minute;
+  }
+
+  String _resolveBreakPreviewStatus(DailyShift? shift) {
+    if (shift == null ||
+        shift.hasBreak != true ||
+        shift.breakStartTime == null ||
+        shift.breakEndTime == null) {
+      return 'Tanpa istirahat';
+    }
+
+    final now = DateTime.now();
+    final nowMinutes = (now.hour * 60) + now.minute;
+    final startMinutes = _parseTimeToMinutes(shift.startTime);
+    final endMinutes = _parseTimeToMinutes(shift.endTime);
+    final breakStartMinutes = _parseTimeToMinutes(shift.breakStartTime);
+    final breakEndMinutes = _parseTimeToMinutes(shift.breakEndTime);
+    if (startMinutes == null ||
+        endMinutes == null ||
+        breakStartMinutes == null ||
+        breakEndMinutes == null) {
+      return 'Jadwal istirahat';
+    }
+
+    var normalizedNow = nowMinutes;
+    var normalizedBreakStart = breakStartMinutes;
+    var normalizedBreakEnd = breakEndMinutes;
+    final overnight = endMinutes <= startMinutes;
+    if (overnight && normalizedNow < startMinutes) {
+      normalizedNow += 1440;
+    }
+    if (overnight && normalizedBreakStart < startMinutes) {
+      normalizedBreakStart += 1440;
+    }
+    if (overnight && normalizedBreakEnd < startMinutes) {
+      normalizedBreakEnd += 1440;
+    }
+    if (normalizedBreakEnd <= normalizedBreakStart) {
+      normalizedBreakEnd += 1440;
+    }
+
+    if (normalizedNow < normalizedBreakStart) return 'Berikutnya';
+    if (normalizedNow >= normalizedBreakStart &&
+        normalizedNow < normalizedBreakEnd) {
+      return 'Sedang berlangsung';
+    }
+    return 'Selesai';
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = Provider.of<AuthProvider>(context, listen: false).user;
@@ -376,6 +432,52 @@ class _MyShiftScreenState extends State<MyShiftScreen> {
                               '${shift?.startTime ?? '-'} - ${shift?.endTime ?? '-'}',
                               style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                             ),
+                            if (shift?.hasBreak == true &&
+                                shift?.breakStartTime != null &&
+                                shift?.breakEndTime != null) ...[
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.7),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: _shiftColor(shift).withOpacity(0.20),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.free_breakfast_outlined,
+                                      size: 15,
+                                      color: _shiftColor(shift),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        'Istirahat ${shift!.breakStartTime} - ${shift.breakEndTime}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey[800],
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      _resolveBreakPreviewStatus(shift),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: _shiftColor(shift),
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),

@@ -43,13 +43,69 @@ class HomeTab extends StatefulWidget {
   State<HomeTab> createState() => _HomeTabState();
 }
 
+class _ShiftStatusItem {
+  final DailyShift? shift;
+  final AttendanceRecord? record;
+  final String title;
+  final String range;
+  final String checkIn;
+  final String checkOut;
+  final String status;
+
+  const _ShiftStatusItem({
+    required this.shift,
+    required this.record,
+    required this.title,
+    required this.range,
+    required this.checkIn,
+    required this.checkOut,
+    required this.status,
+  });
+}
+
+class _ShiftTimelineStage {
+  final String label;
+  final String range;
+  final String status;
+  final Color color;
+  final IconData icon;
+
+  const _ShiftTimelineStage({
+    required this.label,
+    required this.range,
+    required this.status,
+    required this.color,
+    required this.icon,
+  });
+}
+
+class _ShiftBreakWindowConfig {
+  final int shiftStartMinutes;
+  final int shiftEndMinutes;
+  final int breakStartMinutes;
+  final int breakEndMinutes;
+  final bool overnight;
+
+  const _ShiftBreakWindowConfig({
+    required this.shiftStartMinutes,
+    required this.shiftEndMinutes,
+    required this.breakStartMinutes,
+    required this.breakEndMinutes,
+    required this.overnight,
+  });
+}
+
 class _HomeTabState extends State<HomeTab>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   Timer? _durationTimer;
+  Timer? _shiftUiTimer;
   DateTime? _checkInDateTime; // Store parsed check-in datetime
   String? _notificationKey;
   final ValueNotifier<String> _durationNotifier = ValueNotifier<String>(
     '00 : 00 : 00',
+  );
+  final ValueNotifier<DateTime> _shiftClockNotifier = ValueNotifier<DateTime>(
+    DateTime.now(),
   );
   bool _isDisposed = false;
   bool _gpsCheckInProgress = false;
@@ -85,6 +141,7 @@ class _HomeTabState extends State<HomeTab>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _startShiftUiTimer();
 
     debugPrint('[HomeTab] Initializing...');
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -226,7 +283,9 @@ class _HomeTabState extends State<HomeTab>
     _geofenceMapController?.dispose();
     _geofenceMapController = null;
     _durationTimer?.cancel();
+    _shiftUiTimer?.cancel();
     _durationNotifier.dispose();
+    _shiftClockNotifier.dispose();
     super.dispose();
   }
 
@@ -239,6 +298,7 @@ class _HomeTabState extends State<HomeTab>
     }
     // Saat app kembali ke foreground, hitung durasi langsung dari database (tidak perlu timer di background)
     if (state == AppLifecycleState.resumed) {
+      _startShiftUiTimer();
       debugPrint('[HomeTab] App resumed - calculating duration from database');
       _ensureGpsActive(promptSettings: false);
       final attendanceProvider = Provider.of<AttendanceProvider>(
@@ -317,7 +377,23 @@ class _HomeTabState extends State<HomeTab>
         '[HomeTab] App paused/inactive - stopping timer to save battery',
       );
       _durationTimer?.cancel();
+      _shiftUiTimer?.cancel();
     }
+  }
+
+  void _startShiftUiTimer() {
+    _shiftUiTimer?.cancel();
+    if (!mounted || _isDisposed) {
+      return;
+    }
+    _shiftClockNotifier.value = DateTime.now();
+    _shiftUiTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted || _isDisposed) {
+        _shiftUiTimer?.cancel();
+        return;
+      }
+      _shiftClockNotifier.value = DateTime.now();
+    });
   }
 
   Future<void> _loadCurrentLocationForMap({bool force = false}) async {
@@ -1273,6 +1349,55 @@ class _HomeTabState extends State<HomeTab>
     return result;
   }
 
+  Future<String?> _showBreakReasonDialog({
+    required BuildContext context,
+    required String title,
+    required String message,
+  }) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(message),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Keterangan Istirahat',
+                  hintText: 'Isi alasan keterlambatan selesai istirahat',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final reason = controller.text.trim();
+                if (reason.isEmpty) return;
+                Navigator.of(context).pop(reason);
+              },
+              child: const Text('Simpan'),
+            ),
+          ],
+        );
+      },
+    );
+    return result;
+  }
+
   Future<bool> _showCheckoutConfirmationDialog(BuildContext context) async {
     final result = await showDialog<bool>(
       context: context,
@@ -1426,11 +1551,336 @@ class _HomeTabState extends State<HomeTab>
     return "$hours : $minutes";
   }
 
-  List<Map<String, String>> _buildShiftStatusList(
+  _ShiftBreakWindowConfig? _resolveBreakWindowConfig(DailyShift? shift) {
+    if (shift == null ||
+        shift.hasBreak != true ||
+        shift.breakStartTime == null ||
+        shift.breakEndTime == null) {
+      return null;
+    }
+    final shiftStart = _parseTimeToMinutes(shift.startTime);
+    final shiftEnd = _parseTimeToMinutes(shift.endTime);
+    final breakStart = _parseTimeToMinutes(shift.breakStartTime!);
+    final breakEnd = _parseTimeToMinutes(shift.breakEndTime!);
+    if (shiftStart == null ||
+        shiftEnd == null ||
+        breakStart == null ||
+        breakEnd == null) {
+      return null;
+    }
+
+    final overnight = shiftEnd <= shiftStart;
+    final normalizedShiftEnd = overnight ? shiftEnd + 1440 : shiftEnd;
+    var normalizedBreakStart = breakStart;
+    var normalizedBreakEnd = breakEnd;
+
+    if (overnight && normalizedBreakStart < shiftStart) {
+      normalizedBreakStart += 1440;
+    }
+    if (overnight && normalizedBreakEnd < shiftStart) {
+      normalizedBreakEnd += 1440;
+    }
+    if (normalizedBreakEnd <= normalizedBreakStart) {
+      normalizedBreakEnd += 1440;
+    }
+
+    if (normalizedBreakStart < shiftStart ||
+        normalizedBreakEnd > normalizedShiftEnd ||
+        normalizedBreakEnd <= normalizedBreakStart) {
+      return null;
+    }
+
+    return _ShiftBreakWindowConfig(
+      shiftStartMinutes: shiftStart,
+      shiftEndMinutes: normalizedShiftEnd,
+      breakStartMinutes: normalizedBreakStart,
+      breakEndMinutes: normalizedBreakEnd,
+      overnight: overnight,
+    );
+  }
+
+  int _normalizeShiftMinuteForNow(
+    DateTime now,
+    _ShiftBreakWindowConfig config,
+  ) {
+    var minutes = now.hour * 60 + now.minute;
+    if (config.overnight && minutes < config.shiftStartMinutes) {
+      minutes += 1440;
+    }
+    return minutes;
+  }
+
+  _ShiftTimelineStage _buildWorkStage({
+    required String label,
+    required String range,
+    required int currentMinutes,
+    required int startMinutes,
+    required int endMinutes,
+    required bool hasRecord,
+    required bool isCompletedShift,
+  }) {
+    if (!hasRecord) {
+      if (currentMinutes < startMinutes) {
+        return _ShiftTimelineStage(
+          label: label,
+          range: range,
+          status: 'Berikutnya',
+          color: Colors.orange.shade700,
+          icon: Icons.upcoming_outlined,
+        );
+      }
+      return _ShiftTimelineStage(
+        label: label,
+        range: range,
+        status: 'Menunggu check-in',
+        color: Colors.orange.shade700,
+        icon: Icons.login_outlined,
+      );
+    }
+
+    if (isCompletedShift || currentMinutes >= endMinutes) {
+      return _ShiftTimelineStage(
+        label: label,
+        range: range,
+        status: 'Selesai',
+        color: Colors.green.shade700,
+        icon: Icons.check_circle_outline,
+      );
+    }
+
+    if (currentMinutes < startMinutes) {
+      return _ShiftTimelineStage(
+        label: label,
+        range: range,
+        status: 'Berikutnya',
+        color: Colors.orange.shade700,
+        icon: Icons.upcoming_outlined,
+      );
+    }
+
+    return _ShiftTimelineStage(
+      label: label,
+      range: range,
+      status: 'Sedang berjalan',
+      color: Colors.blue.shade700,
+      icon: Icons.timelapse_outlined,
+    );
+  }
+
+  _ShiftTimelineStage _buildBreakStage({
+    required DailyShift shift,
+    required AttendanceRecord? record,
+    required int currentMinutes,
+    required _ShiftBreakWindowConfig config,
+    required bool hasRecord,
+    required bool isCompletedShift,
+  }) {
+    final range = '${shift.breakStartTime} - ${shift.breakEndTime}';
+    final breakStatus = record?.breakStatus?.toLowerCase();
+
+    if (breakStatus == 'active') {
+      return _ShiftTimelineStage(
+        label: 'Istirahat',
+        range: range,
+        status: 'Sedang istirahat',
+        color: Colors.deepOrange.shade700,
+        icon: Icons.free_breakfast_outlined,
+      );
+    }
+    if (breakStatus == 'over_duration') {
+      return _ShiftTimelineStage(
+        label: 'Istirahat',
+        range: range,
+        status: 'Over durasi',
+        color: Colors.red.shade700,
+        icon: Icons.warning_amber_rounded,
+      );
+    }
+    if (breakStatus == 'on_duration') {
+      return _ShiftTimelineStage(
+        label: 'Istirahat',
+        range: range,
+        status: 'Tercatat',
+        color: Colors.green.shade700,
+        icon: Icons.check_circle_outline,
+      );
+    }
+    if (breakStatus == 'no_tagging') {
+      return _ShiftTimelineStage(
+        label: 'Istirahat',
+        range: range,
+        status: 'Tidak tagging',
+        color: Colors.red.shade700,
+        icon: Icons.report_problem_outlined,
+      );
+    }
+
+    if (!hasRecord) {
+      if (currentMinutes < config.breakStartMinutes) {
+        return _ShiftTimelineStage(
+          label: 'Istirahat',
+          range: range,
+          status: 'Berikutnya',
+          color: Colors.orange.shade700,
+          icon: Icons.upcoming_outlined,
+        );
+      }
+      return _ShiftTimelineStage(
+        label: 'Istirahat',
+        range: range,
+        status: 'Belum dimulai',
+        color: Colors.orange.shade700,
+        icon: Icons.free_breakfast_outlined,
+      );
+    }
+
+    if (isCompletedShift || currentMinutes >= config.breakEndMinutes) {
+      return _ShiftTimelineStage(
+        label: 'Istirahat',
+        range: range,
+        status: 'Selesai',
+        color: Colors.green.shade700,
+        icon: Icons.check_circle_outline,
+      );
+    }
+
+    if (currentMinutes < config.breakStartMinutes) {
+      return _ShiftTimelineStage(
+        label: 'Istirahat',
+        range: range,
+        status: 'Berikutnya',
+        color: Colors.orange.shade700,
+        icon: Icons.upcoming_outlined,
+      );
+    }
+
+    return _ShiftTimelineStage(
+      label: 'Istirahat',
+      range: range,
+      status: 'Waktunya istirahat',
+      color: Colors.deepOrange.shade700,
+      icon: Icons.free_breakfast_outlined,
+    );
+  }
+
+  List<_ShiftTimelineStage> _buildShiftTimelineStages(
+    DailyShift? shift,
+    AttendanceRecord? record,
+    DateTime now,
+  ) {
+    final config = _resolveBreakWindowConfig(shift);
+    if (shift == null || config == null) {
+      return const [];
+    }
+
+    final currentMinutes = _normalizeShiftMinuteForNow(now, config);
+    final hasRecord =
+        record != null &&
+        (record.id.isNotEmpty ||
+            record.checkIn != null ||
+            record.checkOut != null);
+    final isCompletedShift =
+        record?.checkOut != null && record!.checkOut!.trim().isNotEmpty;
+
+    return [
+      _buildWorkStage(
+        label: 'Kerja 1',
+        range: '${shift.startTime} - ${shift.breakStartTime}',
+        currentMinutes: currentMinutes,
+        startMinutes: config.shiftStartMinutes,
+        endMinutes: config.breakStartMinutes,
+        hasRecord: hasRecord,
+        isCompletedShift: isCompletedShift,
+      ),
+      _buildBreakStage(
+        shift: shift,
+        record: record,
+        currentMinutes: currentMinutes,
+        config: config,
+        hasRecord: hasRecord,
+        isCompletedShift: isCompletedShift,
+      ),
+      _buildWorkStage(
+        label: 'Kerja 2',
+        range: '${shift.breakEndTime} - ${shift.endTime}',
+        currentMinutes: currentMinutes,
+        startMinutes: config.breakEndMinutes,
+        endMinutes: config.shiftEndMinutes,
+        hasRecord: hasRecord,
+        isCompletedShift: isCompletedShift,
+      ),
+    ];
+  }
+
+  DailyShift? _resolveActiveShiftForAttendance(
+    List<DailyShift> todayShifts,
+    AttendanceRecord? activeRecord,
+  ) {
+    final shiftId = activeRecord?.shiftId;
+    if (shiftId != null && shiftId.isNotEmpty) {
+      for (final shift in todayShifts) {
+        if (shift.id == shiftId) {
+          return shift;
+        }
+      }
+    }
+    return null;
+  }
+
+  bool _isWithinBreakWindow(DailyShift? shift, DateTime now) {
+    final config = _resolveBreakWindowConfig(shift);
+    if (config == null) {
+      return false;
+    }
+    final currentMinutes = _normalizeShiftMinuteForNow(now, config);
+    return currentMinutes >= config.breakStartMinutes &&
+        currentMinutes < config.breakEndMinutes;
+  }
+
+  bool _hasBreakWindowPassed(DailyShift? shift, DateTime now) {
+    final config = _resolveBreakWindowConfig(shift);
+    if (config == null) {
+      return false;
+    }
+    final currentMinutes = _normalizeShiftMinuteForNow(now, config);
+    return currentMinutes >= config.breakEndMinutes;
+  }
+
+  bool _needsBreakEndReason(AttendanceBreakState? breakState) {
+    if (breakState == null || !breakState.strict) {
+      return false;
+    }
+
+    final activeSession = breakState.activeSession;
+    if (activeSession == null) {
+      return false;
+    }
+
+    if ((activeSession.overByMinutes ?? 0) > 0) {
+      return true;
+    }
+
+    try {
+      final startedAt = DateTime.parse(activeSession.startAt).toLocal();
+      final elapsedMinutes = DateTime.now().difference(startedAt).inMinutes;
+      return elapsedMinutes > breakState.maxMinutes;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _shouldPromptBreakReasonFromMessage(String? message) {
+    final normalized = (message ?? '').toLowerCase();
+    return normalized.contains('alasan') ||
+        normalized.contains('reason') ||
+        normalized.contains('keterangan');
+  }
+
+  List<_ShiftStatusItem> _buildShiftStatusList(
     List<DailyShift> shifts,
     List<AttendanceRecord> records,
   ) {
-    final items = <Map<String, String>>[];
+    final items = <_ShiftStatusItem>[];
 
     if (shifts.isNotEmpty) {
       final sorted = [...shifts];
@@ -1465,13 +1915,17 @@ class _HomeTabState extends State<HomeTab>
         final shiftLabel = shift.name.isNotEmpty
             ? shift.name
             : (shift.code.isNotEmpty ? shift.code : "Shift");
-        items.add({
-          "title": "Shift ${i + 1}: $shiftLabel",
-          "range": "${shift.startTime} - ${shift.endTime}",
-          "in": checkIn,
-          "out": checkOut,
-          "status": status,
-        });
+        items.add(
+          _ShiftStatusItem(
+            shift: shift,
+            record: hasRecord ? record : null,
+            title: "Shift ${i + 1}: $shiftLabel",
+            range: "${shift.startTime} - ${shift.endTime}",
+            checkIn: checkIn,
+            checkOut: checkOut,
+            status: status,
+          ),
+        );
       }
 
       return items;
@@ -1481,13 +1935,17 @@ class _HomeTabState extends State<HomeTab>
         .where((r) => r.shiftId == null || r.shiftId!.isEmpty)
         .toList();
     if (shiftlessRecords.isEmpty) {
-      items.add({
-        "title": "Tanpa Shift",
-        "range": "-",
-        "in": "-",
-        "out": "-",
-        "status": "Belum check-in",
-      });
+      items.add(
+        const _ShiftStatusItem(
+          shift: null,
+          record: null,
+          title: "Tanpa Shift",
+          range: "-",
+          checkIn: "-",
+          checkOut: "-",
+          status: "Belum check-in",
+        ),
+      );
       return items;
     }
 
@@ -1504,15 +1962,19 @@ class _HomeTabState extends State<HomeTab>
         status = "Selesai";
       }
 
-      items.add({
-        "title": shiftlessRecords.length > 1
-            ? "Tanpa Shift #${i + 1}"
-            : "Tanpa Shift",
-        "range": "-",
-        "in": checkIn,
-        "out": checkOut,
-        "status": status,
-      });
+      items.add(
+        _ShiftStatusItem(
+          shift: null,
+          record: record,
+          title: shiftlessRecords.length > 1
+              ? "Tanpa Shift #${i + 1}"
+              : "Tanpa Shift",
+          range: "-",
+          checkIn: checkIn,
+          checkOut: checkOut,
+          status: status,
+        ),
+      );
     }
 
     return items;
@@ -2232,6 +2694,85 @@ class _HomeTabState extends State<HomeTab>
     }
   }
 
+  Future<void> _handleStartBreak() async {
+    final attendanceProvider = Provider.of<AttendanceProvider>(
+      context,
+      listen: false,
+    );
+    final result = await attendanceProvider.startBreak();
+    if (!mounted) {
+      return;
+    }
+
+    final message =
+        result['message']?.toString() ??
+        attendanceProvider.error ??
+        'Gagal memulai istirahat';
+
+    if (result['success'] == true) {
+      ToastHelper.showSuccess(context, message);
+      return;
+    }
+
+    ToastHelper.showError(context, message);
+  }
+
+  Future<void> _handleEndBreak() async {
+    final attendanceProvider = Provider.of<AttendanceProvider>(
+      context,
+      listen: false,
+    );
+
+    String? reason;
+    if (_needsBreakEndReason(attendanceProvider.breakState)) {
+      reason = await _showBreakReasonDialog(
+        context: context,
+        title: 'Selesaikan Istirahat',
+        message:
+            'Durasi istirahat melewati batas. Mohon isi keterangan sebelum melanjutkan kerja.',
+      );
+      if (reason == null) {
+        return;
+      }
+    }
+
+    var result = await attendanceProvider.endBreak(reason: reason);
+    var message =
+        result['message']?.toString() ??
+        attendanceProvider.error ??
+        'Gagal menyelesaikan istirahat';
+
+    if (result['success'] != true &&
+        reason == null &&
+        _shouldPromptBreakReasonFromMessage(message)) {
+      reason = await _showBreakReasonDialog(
+        context: context,
+        title: 'Keterangan Istirahat Diperlukan',
+        message: message,
+      );
+      if (reason == null) {
+        return;
+      }
+
+      result = await attendanceProvider.endBreak(reason: reason);
+      message =
+          result['message']?.toString() ??
+          attendanceProvider.error ??
+          'Gagal menyelesaikan istirahat';
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    if (result['success'] == true) {
+      ToastHelper.showSuccess(context, message);
+      return;
+    }
+
+    ToastHelper.showError(context, message);
+  }
+
   void _startDurationTimer() {
     _durationTimer?.cancel();
     if (_checkInDateTime == null) {
@@ -2379,20 +2920,17 @@ class _HomeTabState extends State<HomeTab>
         final hasCheckedIn = today?.checkIn != null;
         final hasCheckedOut = today?.checkOut != null;
 
-        final shiftProvider = Provider.of<ShiftProvider>(
-          context,
-          listen: false,
-        );
+        final shiftProvider = Provider.of<ShiftProvider>(context);
         final todayShifts = shiftProvider.todayShifts;
         final todayRecords = attendanceProvider.todayRecords;
         final shiftItems = _buildShiftStatusList(todayShifts, todayRecords);
         final totalWorkDuration = _calculateTotalWorkDuration(todayRecords);
         final totalWorkLabel = _formatTotalDuration(totalWorkDuration);
         final completedCount = shiftItems
-            .where((item) => item["status"] == "Selesai")
+            .where((item) => item.status == "Selesai")
             .length;
         final inProgressCount = shiftItems
-            .where((item) => item["status"] == "Sedang bekerja")
+            .where((item) => item.status == "Sedang bekerja")
             .length;
         final totalShiftCount = shiftItems.length;
         final noShiftToday = todayShifts.isEmpty && todayRecords.isEmpty;
@@ -2710,9 +3248,12 @@ class _HomeTabState extends State<HomeTab>
                     else if (!hasCheckedIn)
                       _buildCheckInButton(context)
                     else if (!hasCheckedOut)
-                      // Tombol checkout muncul selama sudah check-in dan belum check-out
-                      // (tidak peduli sudah melewati midnight atau tidak)
-                      _buildCheckOutButton(context)
+                      _buildActiveAttendanceActionSection(
+                        context,
+                        attendanceProvider: attendanceProvider,
+                        todayShifts: todayShifts,
+                        today: today,
+                      )
                     else
                       Container(
                         padding: const EdgeInsets.all(16),
@@ -2756,202 +3297,330 @@ class _HomeTabState extends State<HomeTab>
 
                     const SizedBox(height: 16),
                     // Shift Summary Section
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey[200]!),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Rincian Shift Hari Ini',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey[800],
+                    ValueListenableBuilder<DateTime>(
+                      valueListenable: _shiftClockNotifier,
+                      builder: (context, now, _) => Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Rincian Shift Hari Ini',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[800],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 10),
-                          ...shiftItems.map((item) {
-                            final status = item['status'] ?? '-';
-                            final statusColor = status == 'Selesai'
-                                ? Colors.green[600]
-                                : status == 'Sedang bekerja'
-                                ? Colors.blue[600]
-                                : Colors.orange[700];
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: Colors.grey[200]!),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          item['title'] ?? '- ',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.grey[900],
+                            const SizedBox(height: 10),
+                            ...shiftItems.map((item) {
+                              final status = item.status;
+                              final statusColor = status == 'Selesai'
+                                  ? Colors.green[600]
+                                  : status == 'Sedang bekerja'
+                                  ? Colors.blue[600]
+                                  : Colors.orange[700];
+                              final breakStages = _buildShiftTimelineStages(
+                                item.shift,
+                                item.record,
+                                now,
+                              );
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: Colors.grey[200]!),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            item.title,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.grey[900],
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 4,
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: statusColor?.withOpacity(
+                                              0.12,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              20,
+                                            ),
+                                            border: Border.all(
+                                              color: statusColor ?? Colors.grey,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            status,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: statusColor,
+                                            ),
+                                          ),
                                         ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      item.range,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      children: [
+                                        Text(
+                                          "In: ${item.checkIn}",
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[800],
+                                            fontFamily: 'monospace',
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Text(
+                                          "Out: ${item.checkOut}",
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[800],
+                                            fontFamily: 'monospace',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (breakStages.isNotEmpty) ...[
+                                      const SizedBox(height: 10),
+                                      Container(
+                                        padding: const EdgeInsets.all(10),
                                         decoration: BoxDecoration(
-                                          color: statusColor?.withOpacity(0.12),
+                                          color: Colors.blueGrey[50],
                                           borderRadius: BorderRadius.circular(
-                                            20,
+                                            10,
                                           ),
                                           border: Border.all(
-                                            color: statusColor ?? Colors.grey,
+                                            color: Colors.blueGrey[100]!,
                                           ),
                                         ),
-                                        child: Text(
-                                          status,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                            color: statusColor,
-                                          ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Timeline shift & istirahat',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.blueGrey[700],
+                                                letterSpacing: 0.2,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            ...breakStages.map((stage) {
+                                              return Container(
+                                                margin: const EdgeInsets.only(
+                                                  bottom: 6,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 8,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: stage.color
+                                                      .withOpacity(0.08),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                  border: Border.all(
+                                                    color: stage.color
+                                                        .withOpacity(0.25),
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      stage.icon,
+                                                      size: 16,
+                                                      color: stage.color,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        children: [
+                                                          Text(
+                                                            stage.label,
+                                                            style: TextStyle(
+                                                              fontSize: 11,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                              color: Colors
+                                                                  .grey[900],
+                                                            ),
+                                                          ),
+                                                          const SizedBox(
+                                                            height: 2,
+                                                          ),
+                                                          Text(
+                                                            stage.range,
+                                                            style: TextStyle(
+                                                              fontSize: 10,
+                                                              color: Colors
+                                                                  .grey[600],
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical: 4,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color: stage.color
+                                                            .withOpacity(0.12),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              20,
+                                                            ),
+                                                      ),
+                                                      child: Text(
+                                                        stage.status,
+                                                        style: TextStyle(
+                                                          fontSize: 10,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: stage.color,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }),
+                                          ],
                                         ),
                                       ),
                                     ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    item['range'] ?? '-',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    children: [
-                                      Text(
-                                        "In: ${item['in'] ?? '-'}",
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey[800],
-                                          fontFamily: 'monospace',
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Text(
-                                        "Out: ${item['out'] ?? '-'}",
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey[800],
-                                          fontFamily: 'monospace',
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
                               ),
-                            );
-                          }).toList(),
-                          const SizedBox(height: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color:
-                                  completedCount == totalShiftCount &&
-                                      totalShiftCount > 0
-                                  ? Colors.green[50]
-                                  : inProgressCount > 0
-                                  ? Colors.blue[50]
-                                  : Colors.orange[50],
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
+                              decoration: BoxDecoration(
                                 color:
                                     completedCount == totalShiftCount &&
                                         totalShiftCount > 0
-                                    ? Colors.green[200]!
+                                    ? Colors.green[50]
                                     : inProgressCount > 0
-                                    ? Colors.blue[200]!
-                                    : Colors.orange[200]!,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  completedCount == totalShiftCount &&
-                                          totalShiftCount > 0
-                                      ? Icons.check_circle
-                                      : inProgressCount > 0
-                                      ? Icons.timelapse
-                                      : Icons.info_outline,
-                                  size: 16,
+                                    ? Colors.blue[50]
+                                    : Colors.orange[50],
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
                                   color:
                                       completedCount == totalShiftCount &&
                                           totalShiftCount > 0
-                                      ? Colors.green[700]
+                                      ? Colors.green[200]!
                                       : inProgressCount > 0
-                                      ? Colors.blue[700]
-                                      : Colors.orange[700],
+                                      ? Colors.blue[200]!
+                                      : Colors.orange[200]!,
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    noShiftToday
-                                        ? 'Belum ada shift hari ini.'
-                                        : completedCount == totalShiftCount
-                                        ? 'Semua shift hari ini selesai.'
-                                        : 'Selesai $completedCount dari $totalShiftCount shift.',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.grey[800],
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    completedCount == totalShiftCount &&
+                                            totalShiftCount > 0
+                                        ? Icons.check_circle
+                                        : inProgressCount > 0
+                                        ? Icons.timelapse
+                                        : Icons.info_outline,
+                                    size: 16,
+                                    color:
+                                        completedCount == totalShiftCount &&
+                                            totalShiftCount > 0
+                                        ? Colors.green[700]
+                                        : inProgressCount > 0
+                                        ? Colors.blue[700]
+                                        : Colors.orange[700],
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      noShiftToday
+                                          ? 'Belum ada shift hari ini.'
+                                          : completedCount == totalShiftCount
+                                          ? 'Semua shift hari ini selesai.'
+                                          : 'Selesai $completedCount dari $totalShiftCount shift.',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.grey[800],
+                                      ),
                                     ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Total Jam Kerja',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                                Text(
+                                  totalWorkLabel,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue[800],
+                                    letterSpacing: 1.0,
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Total Jam Kerja',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.grey[700],
-                                ),
-                              ),
-                              Text(
-                                totalWorkLabel,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.blue[800],
-                                  letterSpacing: 1.0,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -3785,6 +4454,228 @@ class _HomeTabState extends State<HomeTab>
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBreakActionButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required String loadingLabel,
+    required VoidCallback? onPressed,
+    bool isLoading = false,
+  }) {
+    if (isLoading) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.75),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                loadingLabel,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: onPressed == null ? Colors.grey[400] : color,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: onPressed == null ? 0 : 2,
+        disabledBackgroundColor: Colors.grey[400],
+        disabledForegroundColor: Colors.white70,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            icon,
+            size: 20,
+            color: onPressed == null ? Colors.white70 : Colors.white,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: onPressed == null ? Colors.white70 : Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBreakGuidanceBanner({
+    required IconData icon,
+    required Color color,
+    required String message,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveAttendanceActionSection(
+    BuildContext context, {
+    required AttendanceProvider attendanceProvider,
+    required List<DailyShift> todayShifts,
+    required AttendanceRecord? today,
+  }) {
+    return ValueListenableBuilder<DateTime>(
+      valueListenable: _shiftClockNotifier,
+      builder: (context, now, _) {
+        final activeShift = _resolveActiveShiftForAttendance(
+          todayShifts,
+          today,
+        );
+        final shiftHasBreak = _resolveBreakWindowConfig(activeShift) != null;
+        final breakState = attendanceProvider.breakState;
+        final breakEnabled = shiftHasBreak && (breakState?.enabled ?? false);
+        final breakStatus = (today?.breakStatus ?? '').toLowerCase();
+        final breakWindowActive =
+            breakEnabled && _isWithinBreakWindow(activeShift, now);
+        final breakWindowPassed =
+            breakEnabled && _hasBreakWindowPassed(activeShift, now);
+        final hasOpenBreak =
+            breakState?.activeSession != null || breakStatus == 'active';
+        final hasCompletedBreak =
+            breakStatus == 'on_duration' || breakStatus == 'over_duration';
+        final canStartBreak =
+            breakEnabled &&
+            breakWindowActive &&
+            !hasOpenBreak &&
+            !hasCompletedBreak &&
+            (breakState?.canStart ?? false);
+        final canEndBreak =
+            breakEnabled && hasOpenBreak && (breakState?.canEnd ?? true);
+
+        Widget actionButton = _buildCheckOutButton(context);
+        Widget? banner;
+
+        if (attendanceProvider.isBreakLoading && shiftHasBreak) {
+          actionButton = _buildBreakActionButton(
+            label: 'Memuat Status Istirahat',
+            icon: Icons.free_breakfast_outlined,
+            color: Colors.orange,
+            loadingLabel: 'Memuat status istirahat...',
+            onPressed: null,
+            isLoading: true,
+          );
+        } else if (canEndBreak) {
+          actionButton = _buildBreakActionButton(
+            label: 'Selesai Istirahat',
+            icon: Icons.playlist_add_check_circle_outlined,
+            color: Colors.deepOrange,
+            loadingLabel: 'Menyimpan status istirahat...',
+            onPressed: attendanceProvider.isBreakActionInProgress
+                ? null
+                : _handleEndBreak,
+            isLoading: attendanceProvider.isBreakActionInProgress,
+          );
+          banner = _buildBreakGuidanceBanner(
+            icon: Icons.free_breakfast_outlined,
+            color: Colors.deepOrange,
+            message:
+                'Anda sedang dalam sesi istirahat. Selesaikan istirahat terlebih dahulu sebelum melanjutkan pekerjaan.',
+          );
+        } else if (canStartBreak) {
+          actionButton = _buildBreakActionButton(
+            label: 'Mulai Istirahat',
+            icon: Icons.free_breakfast_outlined,
+            color: Colors.orange,
+            loadingLabel: 'Memulai istirahat...',
+            onPressed: attendanceProvider.isBreakActionInProgress
+                ? null
+                : _handleStartBreak,
+            isLoading: attendanceProvider.isBreakActionInProgress,
+          );
+          banner = _buildBreakGuidanceBanner(
+            icon: Icons.schedule_outlined,
+            color: Colors.orange.shade800,
+            message:
+                'Saat ini masuk jadwal istirahat. Tombol utama berubah menjadi Mulai Istirahat.',
+          );
+        } else if (breakEnabled &&
+            hasCompletedBreak &&
+            !attendanceProvider.isBreakActionInProgress) {
+          banner = _buildBreakGuidanceBanner(
+            icon: Icons.check_circle_outline,
+            color: Colors.green.shade700,
+            message:
+                'Istirahat sudah tercatat. Anda dapat melanjutkan pekerjaan dan melakukan check-out saat selesai shift.',
+          );
+        } else if (breakEnabled &&
+            (breakState?.mandatory ?? false) &&
+            breakWindowPassed &&
+            !hasOpenBreak &&
+            !hasCompletedBreak &&
+            breakStatus != 'no_tagging') {
+          banner = _buildBreakGuidanceBanner(
+            icon: Icons.warning_amber_rounded,
+            color: Colors.red.shade700,
+            message:
+                'Istirahat wajib belum ditagging. Jika langsung check-out, status absensi akan tercatat sebagai no tagging.',
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [if (banner != null) banner, actionButton],
         );
       },
     );

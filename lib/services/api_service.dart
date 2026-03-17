@@ -112,6 +112,7 @@ class ApiService {
   Future<Response> get(
     String endpoint, {
     Map<String, dynamic>? queryParameters,
+    Map<String, dynamic>? headers,
     ResponseType responseType = ResponseType.json,
   }) async {
     try {
@@ -119,6 +120,7 @@ class ApiService {
         endpoint,
         queryParameters: queryParameters,
         options: Options(
+          headers: headers,
           responseType: responseType,
           followRedirects: false,
           validateStatus: (status) =>
@@ -132,12 +134,17 @@ class ApiService {
   }
 
   // POST request dengan JSON
-  Future<Response> post(String endpoint, {Map<String, dynamic>? data}) async {
+  Future<Response> post(
+    String endpoint, {
+    Map<String, dynamic>? data,
+    Map<String, dynamic>? headers,
+  }) async {
     try {
       final response = await _dio.post(
         endpoint,
         data: data,
         options: Options(
+          headers: headers,
           followRedirects: false,
           validateStatus: (status) =>
               status! < 600, // Allow 500-level errors for custom handling
@@ -150,12 +157,17 @@ class ApiService {
   }
 
   // POST request dengan FormData (untuk upload file)
-  Future<Response> postFormData(String endpoint, FormData formData) async {
+  Future<Response> postFormData(
+    String endpoint,
+    FormData formData, {
+    Map<String, dynamic>? headers,
+  }) async {
     try {
       final response = await _dio.post(
         endpoint,
         data: formData,
         options: Options(
+          headers: headers,
           contentType: 'multipart/form-data',
           followRedirects: false,
           validateStatus: (status) =>
