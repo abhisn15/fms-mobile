@@ -309,6 +309,7 @@ Semua upload gambar (check-in, check-out, activity, patroli checkpoint, profile)
 
 ## Dokumentasi Tambahan
 
+- [**Business Flow**](docs/BUSINESS_FLOW.md) - **Alur bisnis end-to-end** (auth, absensi, shift, aktivitas, patroli, request, tim, offline sync, koneksi ke backend atenim)
 - [Dokumentasi Teknis](docs/README.md) - Indeks dokumentasi lengkap
 - [Camera Fix Documentation](docs/CAMERA_FIX.md) - Dokumentasi perbaikan camera preview
 - [Release Notes](docs/RELEASE_NOTES_v1.0.8.md) - Catatan rilis versi
