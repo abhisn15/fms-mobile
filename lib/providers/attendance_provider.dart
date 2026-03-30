@@ -32,6 +32,12 @@ class AttendanceProvider with ChangeNotifier {
   bool _trackingEnabledByPolicy = false;
   int _trackingIntervalSeconds = 60;
 
+  // Callback setelah checkout sukses (untuk rating popup, dll)
+  void Function()? _onCheckoutSuccessCallback;
+  void setOnCheckoutSuccessCallback(void Function()? cb) {
+    _onCheckoutSuccessCallback = cb;
+  }
+
   // Flags to prevent double API calls
   bool _checkInInProgress = false;
   bool _checkOutInProgress = false;
@@ -983,6 +989,10 @@ class AttendanceProvider with ChangeNotifier {
               endDate: now,
               forceRefresh: true,
             );
+
+            // Trigger rating popup (hanya sekali, di checkout pertama)
+            _onCheckoutSuccessCallback?.call();
+
             return true;
           } else {
             _error = result['message'] as String? ?? 'Check-out gagal';

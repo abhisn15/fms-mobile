@@ -29,6 +29,7 @@ import '../../services/team_service.dart';
 import '../../services/persistent_notification_service.dart';
 import '../../services/api_service.dart';
 import '../../providers/checkpoint_provider.dart';
+import '../../widgets/app_rating_dialog.dart';
 import '../notifications/notification_screen.dart';
 import '../../models/checkpoint_model.dart';
 import '../activity/activity_form_screen.dart';
@@ -159,6 +160,17 @@ class _HomeTabState extends State<HomeTab>
 
     debugPrint('[HomeTab] Initializing...');
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Register rating callback setelah checkout sukses
+      final attendanceProv = Provider.of<AttendanceProvider>(
+        context,
+        listen: false,
+      );
+      attendanceProv.setOnCheckoutSuccessCallback(() {
+        if (mounted) {
+          AppRatingDialog.maybeShowAfterCheckout(context);
+        }
+      });
+
       debugPrint('[HomeTab] Loading initial data...');
       // Set connectivity provider untuk attendance provider
       final attendanceProvider = Provider.of<AttendanceProvider>(
