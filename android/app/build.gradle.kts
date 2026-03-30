@@ -6,7 +6,20 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
-    id("com.google.gms.google-services")
+}
+
+// Hanya terapkan Google Services jika google-services.json valid (berisi mobilesdk_app_id).
+// File JSON service account Firebase (Admin SDK) TIDAK bisa dipakai di sini — unduh dari
+// Firebase Console: Project settings > Your apps > Android > Download google-services.json
+val googleServicesJson = file("google-services.json")
+val hasFirebaseAndroidConfig = try {
+    googleServicesJson.exists() &&
+        googleServicesJson.readText().contains("\"mobilesdk_app_id\": \"1:")
+} catch (_: Exception) {
+    false
+}
+if (hasFirebaseAndroidConfig) {
+    apply(plugin = "com.google.gms.google-services")
 }
 
 // Load keystore properties
