@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/api_service.dart';
 import '../../config/api_config.dart';
+import '../../widgets/simple_html_renderer.dart';
 
 class NotificationItem {
   final String id;
@@ -342,7 +343,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      item.body,
+                      _stripHtmlForPreview(item.body),
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.grey[600],
@@ -481,9 +482,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
                     const SizedBox(height: 20),
                     const Divider(height: 1),
                     const SizedBox(height: 20),
-                    Text(
-                      item.body,
-                      style: const TextStyle(
+                    SimpleHtmlRenderer(
+                      html: item.body,
+                      baseStyle: const TextStyle(
                         fontSize: 15,
                         color: Color(0xFF334155),
                         height: 1.6,
@@ -515,6 +516,18 @@ class _NotificationScreenState extends State<NotificationScreen> {
         ),
       ),
     );
+  }
+
+  String _stripHtmlForPreview(String html) {
+    return html
+        .replaceAll(RegExp(r'<br\s*/?>'), ' ')
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .trim();
   }
 
   Widget _buildEmptyState() {
