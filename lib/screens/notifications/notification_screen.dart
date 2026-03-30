@@ -10,6 +10,7 @@ class NotificationItem {
   final String targetType;
   final String? senderName;
   final DateTime createdAt;
+  bool isRead;
 
   NotificationItem({
     required this.id,
@@ -18,6 +19,7 @@ class NotificationItem {
     required this.targetType,
     this.senderName,
     required this.createdAt,
+    this.isRead = false,
   });
 
   factory NotificationItem.fromJson(Map<String, dynamic> json) {
@@ -28,6 +30,7 @@ class NotificationItem {
       targetType: json['targetType'] as String? ?? 'all',
       senderName: json['senderName'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
+      isRead: json['isRead'] as bool? ?? false,
     );
   }
 }
@@ -267,12 +270,16 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   Widget _buildNotificationCard(NotificationItem item) {
     final color = _getTargetColor(item.targetType);
+    final isUnread = !item.isRead;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isUnread ? Colors.blue.withOpacity(0.03) : Colors.white,
         borderRadius: BorderRadius.circular(16),
+        border: isUnread
+            ? Border.all(color: Colors.blue.withOpacity(0.15), width: 1)
+            : null,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -306,15 +313,32 @@ class _NotificationScreenState extends State<NotificationScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      item.title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1E293B),
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        if (isUnread)
+                          Container(
+                            width: 8,
+                            height: 8,
+                            margin: const EdgeInsets.only(right: 6),
+                            decoration: const BoxDecoration(
+                              color: Colors.blue,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        Expanded(
+                          child: Text(
+                            item.title,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight:
+                                  isUnread ? FontWeight.w700 : FontWeight.w600,
+                              color: const Color(0xFF1E293B),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -368,7 +392,21 @@ class _NotificationScreenState extends State<NotificationScreen> {
     );
   }
 
+  Future<void> _markAsRead(NotificationItem item) async {
+    if (item.isRead) return;
+    try {
+      await ApiService().post(
+        ApiConfig.notificationRead,
+        data: {'notificationId': item.id},
+      );
+      if (mounted) {
+        setState(() => item.isRead = true);
+      }
+    } catch (_) {}
+  }
+
   void _showNotificationDetail(NotificationItem item) {
+    _markAsRead(item);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,

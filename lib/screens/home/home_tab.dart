@@ -27,6 +27,7 @@ import '../../config/api_config.dart';
 import '../../utils/toast_helper.dart';
 import '../../services/team_service.dart';
 import '../../services/persistent_notification_service.dart';
+import '../../services/api_service.dart';
 import '../../providers/checkpoint_provider.dart';
 import '../notifications/notification_screen.dart';
 import '../../models/checkpoint_model.dart';
@@ -109,6 +110,17 @@ class _HomeTabState extends State<HomeTab>
     DateTime.now(),
   );
   bool _isDisposed = false;
+  int _unreadNotifCount = 0;
+
+  Future<void> _fetchUnreadCount() async {
+    try {
+      final response = await ApiService().get(ApiConfig.notificationUnreadCount);
+      final count = response.data['unreadCount'] as int? ?? 0;
+      if (mounted && !_isDisposed) {
+        setState(() => _unreadNotifCount = count);
+      }
+    } catch (_) {}
+  }
   bool _gpsCheckInProgress = false;
   bool _gpsPrompted = false;
   bool _shouldRetryCheckInAfterGpsPrompt = false;
@@ -143,6 +155,7 @@ class _HomeTabState extends State<HomeTab>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _startShiftUiTimer();
+    _fetchUnreadCount();
 
     debugPrint('[HomeTab] Initializing...');
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -4912,32 +4925,64 @@ class _HomeTabState extends State<HomeTab>
                   ],
                 ),
               ),
-              // Notification Bell
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: IconButton(
-                  icon: const Icon(
-                    Icons.notifications_outlined,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationScreen(),
+              // Notification Bell with unread badge
+              Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.notifications_outlined,
+                        color: Colors.white,
+                        size: 20,
                       ),
-                    );
-                  },
-                  padding: const EdgeInsets.all(6),
-                  constraints: const BoxConstraints(
-                    minWidth: 36,
-                    minHeight: 36,
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const NotificationScreen(),
+                          ),
+                        );
+                        _fetchUnreadCount();
+                      },
+                      padding: const EdgeInsets.all(6),
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                    ),
                   ),
-                ),
+                  if (_unreadNotifCount > 0)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        child: Text(
+                          _unreadNotifCount > 99
+                              ? '99+'
+                              : _unreadNotifCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),

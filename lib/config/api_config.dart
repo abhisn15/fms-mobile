@@ -65,6 +65,9 @@ class ApiConfig {
   static const String locationSettings = '/api/ess/location-settings';
   static const String pushToken = '/api/ess/notifications/token';
   static const String notifications = '/api/ess/notifications';
+  static const String notificationRead = '/api/ess/notifications/read';
+  static const String notificationUnreadCount =
+      '/api/ess/notifications/unread-count';
 
   // Team endpoints (employee)
   static const String teamMembers = '/api/ess/team/members';
