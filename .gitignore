@@ -54,6 +54,10 @@ app.*.map.json
 # Allow .env.example untuk template
 !.env.example
 
+# Firebase Android — jangan commit ke repo publik (API key terdeteksi Google).
+# Salin dari Firebase Console ke google-services.json secara lokal / CI secret.
+android/app/google-services.json
+
 # Android Keystore - JANGAN commit keystore dan key.properties!
 *.jks
 *.keystore

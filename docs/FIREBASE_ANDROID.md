@@ -1,5 +1,12 @@
 # Firebase Android (`google-services.json`)
 
+## Repo publik (GitHub) — penting
+
+File **`android/app/google-services.json` berisi API key klien** dan **tidak boleh di-commit** ke repository **publik**. Google memindai repo publik dan akan mengirim peringatan jika kunci terlihat.
+
+- Di repo ini file asli **di-ignore** oleh Git; gunakan **`android/app/google-services.json.example`** sebagai acuan, lalu salin menjadi `google-services.json` dan isi dari unduhan Firebase Console (hanya di mesin lokal atau secret CI).
+- Jika kunci pernah ter-push ke publik: **batasi / rotate key** di [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials.
+
 ## Service account ≠ konfigurasi Android
 
 File seperti `atenim-6255f-firebase-adminsdk-*.json` adalah **kredensial server (Firebase Admin SDK)** untuk backend (misalnya Node.js mengirim FCM). File itu **tidak** berisi `mobilesdk_app_id` dan **tidak bisa** dipakai sebagai `android/app/google-services.json`.

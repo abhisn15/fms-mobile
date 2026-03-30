@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "882939727354",
-    "project_id": "atenim-6255f",
-    "storage_bucket": "atenim-6255f.firebasestorage.app"
+    "project_number": "YOUR_PROJECT_NUMBER",
+    "project_id": "your-firebase-project-id",
+    "storage_bucket": "your-project-id.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:882939727354:android:7dacbb39d419065befe843",
+        "mobilesdk_app_id": "1:YOUR_PROJECT_NUMBER:android:YOUR_APP_HASH",
         "android_client_info": {
           "package_name": "com.atenim"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAlxQAlLX_SuWpESyBpM62KsVRRyzy1tZQ"
+          "current_key": "YOUR_ANDROID_API_KEY_FROM_FIREBASE_CONSOLE"
         }
       ],
       "services": {
