@@ -17,6 +17,7 @@ import 'providers/developer_options_provider.dart';
 import 'providers/checkpoint_provider.dart';
 import 'widgets/developer_options_warning_dialog.dart';
 import 'services/background_tracking_service.dart';
+import 'services/push_notification_service.dart';
 import 'services/tracking_state_service.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/home/home_screen.dart';
@@ -83,6 +84,12 @@ Future<void> _initBackgroundServices() async {
     await PersistentNotificationService.initialize();
   } catch (e) {
     debugPrint('[App] ⚠️ Failed to initialize notifications: $e');
+  }
+
+  try {
+    await PushNotificationService.initialize();
+  } catch (e) {
+    debugPrint('[App] ⚠️ Failed to initialize push notifications: $e');
   }
 }
 

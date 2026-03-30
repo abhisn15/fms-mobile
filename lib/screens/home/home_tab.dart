@@ -28,6 +28,7 @@ import '../../utils/toast_helper.dart';
 import '../../services/team_service.dart';
 import '../../services/persistent_notification_service.dart';
 import '../../providers/checkpoint_provider.dart';
+import '../notifications/notification_screen.dart';
 import '../../models/checkpoint_model.dart';
 import '../activity/activity_form_screen.dart';
 import '../shifts/my_shift_screen.dart';
@@ -4924,7 +4925,12 @@ class _HomeTabState extends State<HomeTab>
                     size: 20,
                   ),
                   onPressed: () {
-                    _showNotificationUnderMaintenance(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const NotificationScreen(),
+                      ),
+                    );
                   },
                   padding: const EdgeInsets.all(6),
                   constraints: const BoxConstraints(
@@ -4937,72 +4943,6 @@ class _HomeTabState extends State<HomeTab>
           ),
         );
       },
-    );
-  }
-
-  void _showNotificationUnderMaintenance(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.orange[50],
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                Icons.construction,
-                color: Colors.orange[700],
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Notifikasi',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.build_circle_outlined,
-              size: 64,
-              color: Colors.orange[400],
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Fitur notifikasi sedang dalam pengembangan',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Fitur ini akan segera hadir di update berikutnya',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Mengerti',
-              style: TextStyle(
-                color: Colors.blue[700],
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 

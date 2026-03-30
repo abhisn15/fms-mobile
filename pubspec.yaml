@@ -49,6 +49,8 @@ dependencies:
 
   # Local Notifications (for persistent check-in notification)
   flutter_local_notifications: ^17.2.2
+  firebase_core: ^3.15.2
+  firebase_messaging: ^15.1.5
   
   # Date & Time
   intl: ^0.20.2

@@ -63,6 +63,8 @@ class ApiConfig {
   static const String clientErrorLog = '/api/ess/client-logs';
   static const String version = '/api/version';
   static const String locationSettings = '/api/ess/location-settings';
+  static const String pushToken = '/api/ess/notifications/token';
+  static const String notifications = '/api/ess/notifications';
 
   // Team endpoints (employee)
   static const String teamMembers = '/api/ess/team/members';

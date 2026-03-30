@@ -1,13 +1,17 @@
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
+import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import '../config/api_config.dart';
 import '../models/user_model.dart';
 import 'api_service.dart';
+import 'device_id_service.dart';
 
 class AuthService {
   final ApiService _apiService = ApiService();
+  static final DeviceInfoPlugin _deviceInfoPlugin = DeviceInfoPlugin();
   static const String _userKey = 'user_data';
   static const String _isLoggedInKey = 'is_logged_in';
   static const String _legacyUserKey = 'user_data_legacy';
@@ -16,11 +20,24 @@ class AuthService {
   /// [email] bisa berupa email atau NIK KTP
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
+      final deviceId = await DeviceIdService.getOrCreateDeviceId();
+      final loginDeviceInfo = await _getLoginDeviceInfo();
+      final deviceName = loginDeviceInfo['deviceName'];
+      final devicePlatform = loginDeviceInfo['devicePlatform'];
+
       final response = await _apiService.post(
         ApiConfig.login,
         data: {
           'email': email, // Bisa berupa email atau NIK KTP
           'password': password,
+          'deviceId': deviceId,
+          'deviceName': deviceName,
+          'devicePlatform': devicePlatform,
+        },
+        headers: {
+          'x-device-id': deviceId,
+          'x-device-name': deviceName,
+          'x-device-platform': devicePlatform,
         },
       );
 
@@ -51,9 +68,11 @@ class AuthService {
         if (e.type == DioExceptionType.connectionTimeout ||
             e.type == DioExceptionType.receiveTimeout ||
             e.type == DioExceptionType.sendTimeout) {
-          errorMessage = 'Koneksi timeout. Pastikan backend server berjalan dan dapat diakses.';
+          errorMessage =
+              'Koneksi timeout. Pastikan backend server berjalan dan dapat diakses.';
         } else if (e.type == DioExceptionType.connectionError) {
-          errorMessage = 'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
+          errorMessage =
+              'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
         } else {
           // ✅ Ambil error message dari response backend
           final responseData = e.response?.data;
@@ -66,10 +85,7 @@ class AuthService {
       } else {
         errorMessage = e.toString().replaceAll('Exception: ', '');
       }
-      return {
-        'success': false,
-        'message': errorMessage,
-      };
+      return {'success': false, 'message': errorMessage};
     }
   }
 
@@ -95,7 +111,9 @@ class AuthService {
           await _saveUser(user);
           return user;
         } catch (legacyError) {
-          debugPrint('[AuthService] Failed to parse legacy cached user: $legacyError');
+          debugPrint(
+            '[AuthService] Failed to parse legacy cached user: $legacyError',
+          );
         }
       }
     }
@@ -133,9 +151,13 @@ class AuthService {
       final response = await _apiService.get(ApiConfig.session);
       if (response.statusCode == 200 && response.data['data'] != null) {
         final userData = response.data['data'];
-        debugPrint('[AuthService] User data from session: name="${userData['name']}", email="${userData['email']}"');
+        debugPrint(
+          '[AuthService] User data from session: name="${userData['name']}", email="${userData['email']}"',
+        );
         final user = User.fromJson(userData);
-        debugPrint('[AuthService] Parsed user: name="${user.name}", email="${user.email}"');
+        debugPrint(
+          '[AuthService] Parsed user: name="${user.name}", email="${user.email}"',
+        );
         await _saveUser(user);
         return user;
       }
@@ -169,7 +191,7 @@ class AuthService {
       // Normalize email: trim (untuk NIK KTP, tidak lowercase karena bisa angka)
       // Backend akan handle lowercase untuk email dan normalization untuk NIK
       final normalizedEmail = email.trim();
-      
+
       final response = await _apiService.post(
         ApiConfig.forgotPassword,
         data: {
@@ -180,8 +202,10 @@ class AuthService {
       if (response.statusCode == 200) {
         return {
           'success': true,
-          'message': response.data['message'] ?? 'OTP telah dikirim ke email Anda',
-          'email': response.data['email'], // ✅ Email dari backend (jika input NIK, ini adalah email user yang terkait)
+          'message':
+              response.data['message'] ?? 'OTP telah dikirim ke email Anda',
+          'email': response
+              .data['email'], // ✅ Email dari backend (jika input NIK, ini adalah email user yang terkait)
         };
       } else {
         // ✅ Handle semua status code error (400, 404, 500, dll)
@@ -198,9 +222,11 @@ class AuthService {
         if (e.type == DioExceptionType.connectionTimeout ||
             e.type == DioExceptionType.receiveTimeout ||
             e.type == DioExceptionType.sendTimeout) {
-          errorMessage = 'Koneksi timeout. Pastikan backend server berjalan dan dapat diakses.';
+          errorMessage =
+              'Koneksi timeout. Pastikan backend server berjalan dan dapat diakses.';
         } else if (e.type == DioExceptionType.connectionError) {
-          errorMessage = 'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
+          errorMessage =
+              'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
         } else {
           // ✅ Ambil error message dari response backend
           final responseData = e.response?.data;
@@ -213,10 +239,7 @@ class AuthService {
       } else {
         errorMessage = e.toString().replaceAll('Exception: ', '');
       }
-      return {
-        'success': false,
-        'message': errorMessage,
-      };
+      return {'success': false, 'message': errorMessage};
     }
   }
 
@@ -225,13 +248,10 @@ class AuthService {
     try {
       // Normalize email: trim and lowercase (sama seperti di backend)
       final normalizedEmail = email.trim().toLowerCase();
-      
+
       final response = await _apiService.post(
         ApiConfig.verifyOTP,
-        data: {
-          'email': normalizedEmail,
-          'otp': otpCode.trim(),
-        },
+        data: {'email': normalizedEmail, 'otp': otpCode.trim()},
       );
 
       if (response.statusCode == 200) {
@@ -248,9 +268,11 @@ class AuthService {
         if (e.type == DioExceptionType.connectionTimeout ||
             e.type == DioExceptionType.receiveTimeout ||
             e.type == DioExceptionType.sendTimeout) {
-          errorMessage = 'Koneksi timeout. Pastikan backend server berjalan dan dapat diakses.';
+          errorMessage =
+              'Koneksi timeout. Pastikan backend server berjalan dan dapat diakses.';
         } else if (e.type == DioExceptionType.connectionError) {
-          errorMessage = 'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
+          errorMessage =
+              'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
         } else {
           // ✅ Ambil error message dari response backend
           final responseData = e.response?.data;
@@ -263,23 +285,20 @@ class AuthService {
       } else {
         errorMessage = e.toString().replaceAll('Exception: ', '');
       }
-      return {
-        'success': false,
-        'message': errorMessage,
-      };
+      return {'success': false, 'message': errorMessage};
     }
   }
 
   /// Reset password dengan OTP yang sudah diverifikasi
-  Future<Map<String, dynamic>> resetPassword(String email, String otpCode, String newPassword) async {
+  Future<Map<String, dynamic>> resetPassword(
+    String email,
+    String otpCode,
+    String newPassword,
+  ) async {
     try {
       final response = await _apiService.post(
         ApiConfig.resetPassword,
-        data: {
-          'email': email,
-          'otp': otpCode,
-          'password': newPassword,
-        },
+        data: {'email': email, 'otp': otpCode, 'password': newPassword},
       );
 
       if (response.statusCode == 200) {
@@ -296,9 +315,11 @@ class AuthService {
         if (e.type == DioExceptionType.connectionTimeout ||
             e.type == DioExceptionType.receiveTimeout ||
             e.type == DioExceptionType.sendTimeout) {
-          errorMessage = 'Koneksi timeout. Pastikan backend server berjalan dan dapat diakses.';
+          errorMessage =
+              'Koneksi timeout. Pastikan backend server berjalan dan dapat diakses.';
         } else if (e.type == DioExceptionType.connectionError) {
-          errorMessage = 'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
+          errorMessage =
+              'Tidak dapat terhubung ke server. Pastikan backend server berjalan.';
         } else {
           // ✅ Ambil error message dari response backend
           final responseData = e.response?.data;
@@ -311,10 +332,7 @@ class AuthService {
       } else {
         errorMessage = e.toString().replaceAll('Exception: ', '');
       }
-      return {
-        'success': false,
-        'message': errorMessage,
-      };
+      return {'success': false, 'message': errorMessage};
     }
   }
 
@@ -335,29 +353,72 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     final payload = user.toJson();
     await prefs.setString(_userKey, jsonEncode(payload));
-    await prefs.setString(_legacyUserKey, jsonEncode({
-      'id': user.id,
-      'name': user.name,
-      'email': user.email,
-      'role': user.role,
-      'team': user.team,
-      'title': user.title,
-      'avatarColor': user.avatarColor,
-      'photoUrl': user.photoUrl,
-      'externalId': user.externalId,
-      'phone': user.phone,
-      'siteId': user.siteId,
-      'site': user.site?.toJson(),
-      'positionId': user.positionId,
-      'position': user.position?.toJson(),
-      'hasPassword': user.hasPassword,
-      'needsPasswordChange': user.needsPasswordChange,
-    }));
+    await prefs.setString(
+      _legacyUserKey,
+      jsonEncode({
+        'id': user.id,
+        'name': user.name,
+        'email': user.email,
+        'role': user.role,
+        'team': user.team,
+        'title': user.title,
+        'avatarColor': user.avatarColor,
+        'photoUrl': user.photoUrl,
+        'externalId': user.externalId,
+        'phone': user.phone,
+        'siteId': user.siteId,
+        'site': user.site?.toJson(),
+        'positionId': user.positionId,
+        'position': user.position?.toJson(),
+        'hasPassword': user.hasPassword,
+        'needsPasswordChange': user.needsPasswordChange,
+      }),
+    );
   }
 
   Future<void> _setLoggedIn(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_isLoggedInKey, value);
+  }
+
+  Future<Map<String, String>> _getLoginDeviceInfo() async {
+    try {
+      if (Platform.isAndroid) {
+        final info = await _deviceInfoPlugin.androidInfo;
+        final brand = info.brand.trim();
+        final model = info.model.trim();
+        final name = [
+          brand,
+          model,
+        ].where((value) => value.isNotEmpty).join(' ').trim();
+        return {
+          'deviceName': name.isNotEmpty ? name : info.device.trim(),
+          'devicePlatform': 'android',
+        };
+      }
+
+      if (Platform.isIOS) {
+        final info = await _deviceInfoPlugin.iosInfo;
+        final model = info.model.trim();
+        final name = info.name.trim();
+        final resolvedName = [
+          name,
+          model,
+        ].where((value) => value.isNotEmpty).join(' ').trim();
+        return {
+          'deviceName': resolvedName.isNotEmpty ? resolvedName : 'iPhone',
+          'devicePlatform': 'ios',
+        };
+      }
+
+      return {
+        'deviceName': Platform.operatingSystem,
+        'devicePlatform': Platform.operatingSystem,
+      };
+    } catch (e) {
+      debugPrint('[AuthService] Failed to resolve device info: $e');
+      return {'deviceName': 'Unknown Device', 'devicePlatform': 'unknown'};
+    }
   }
 }
 
@@ -477,4 +538,3 @@ class _LegacyMapParser {
     return _input[_index];
   }
 }
-

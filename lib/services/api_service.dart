@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'device_id_service.dart';
 
 /// Callback untuk handle session expired
 typedef SessionExpiredCallback = void Function();
@@ -45,6 +46,12 @@ class ApiService {
           if (cookies != null && cookies.isNotEmpty) {
             options.headers['Cookie'] = cookies;
           }
+
+          if (options.headers['x-device-id'] == null) {
+            final deviceId = await DeviceIdService.getOrCreateDeviceId();
+            options.headers['x-device-id'] = deviceId;
+          }
+
           handler.next(options);
         },
         onResponse: (response, handler) async {

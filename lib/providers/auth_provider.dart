@@ -5,6 +5,7 @@ import '../models/user_model.dart';
 import '../models/version_model.dart';
 import '../services/auth_service.dart';
 import '../services/background_tracking_service.dart';
+import '../services/push_notification_service.dart';
 import '../services/tracking_state_service.dart';
 import '../services/version_service.dart';
 import '../services/persistent_notification_service.dart';
@@ -131,6 +132,8 @@ class AuthProvider with ChangeNotifier {
       if (result['success'] == true) {
         _user = result['user'] as User;
 
+        unawaited(PushNotificationService.syncCurrentToken());
+
         // Check for app updates after successful login
         try {
           final updateCheck = await _versionService.checkUpdateAvailability();
@@ -166,6 +169,9 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> logout() async {
     debugPrint('[AuthProvider] Logging out...');
+
+    // Unregister push token before logout
+    await PushNotificationService.unregisterCurrentToken();
 
     // Stop all tracking services
     await TrackingStateService.clearTrackingState();
