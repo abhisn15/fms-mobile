@@ -7,7 +7,7 @@ import '../../services/team_service.dart';
 import '../../config/api_config.dart';
 import '../../models/user_model.dart';
 import '../../models/team_model.dart';
-import '../../main.dart' show navigatorKey;
+import '../../app_keys.dart' show navigatorKey;
 import 'dart:io';
 
 class ProfileScreen extends StatefulWidget {

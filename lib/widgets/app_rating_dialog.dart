@@ -192,7 +192,7 @@ class AppRatingDialog {
 
     final stars = result['stars'] as int? ?? 0;
 
-    // Kalau rating >= 4, tawarkan Play Store review juga
+    // Kalau rating >= 4, coba tampilkan in-app review (store mengikuti platform).
     if (stars >= 4) {
       try {
         final inAppReview = InAppReview.instance;

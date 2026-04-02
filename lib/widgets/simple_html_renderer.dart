@@ -44,73 +44,114 @@ class SimpleHtmlRenderer extends StatelessWidget {
         .replaceAll('&lt;', '<')
         .replaceAll('&gt;', '>');
 
-    final imgRegex = RegExp(r'<img[^>]+src="([^"]+)"[^>]*/?>', caseSensitive: false);
-    final hrRegex = RegExp(r'<hr\s*/?>');
+    final blockRegex = RegExp(
+      r'<img[^>]+src="([^"]+)"[^>]*>|<hr\s*/?>',
+      caseSensitive: false,
+    );
 
-    final segments =
-        cleaned.split(RegExp(r'(<img[^>]+>|<hr\s*/?>)', caseSensitive: false));
-
-    for (final segment in segments) {
-      final trimmed = segment.trim();
-      if (trimmed.isEmpty) continue;
-
-      final imgMatch = imgRegex.firstMatch(trimmed);
-      if (imgMatch != null) {
-        final url = imgMatch.group(1) ?? '';
-        if (url.isNotEmpty) {
-          result.add(
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: CachedNetworkImage(
-                  imageUrl: url,
-                  maxHeightDiskCache: 500,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  placeholder: (_, __) => Container(
-                    height: 120,
-                    color: Colors.grey[200],
-                    child: const Center(
-                        child: CircularProgressIndicator(strokeWidth: 2)),
-                  ),
-                  errorWidget: (_, __, ___) => Container(
-                    height: 80,
-                    color: Colors.grey[100],
-                    child: Center(
-                      child: Icon(Icons.broken_image,
-                          color: Colors.grey[400], size: 32),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }
-        continue;
+    int cursor = 0;
+    for (final match in blockRegex.allMatches(cleaned)) {
+      if (match.start > cursor) {
+        _appendTextAsWidget(
+          result,
+          cleaned.substring(cursor, match.start).trim(),
+          style,
+        );
       }
 
-      if (hrRegex.hasMatch(trimmed)) {
+      final token = match.group(0) ?? '';
+      final imageUrl = match.group(1);
+      if (imageUrl != null && imageUrl.isNotEmpty) {
+        result.add(_buildImage(imageUrl));
+      } else if (RegExp(r'<hr\s*/?>', caseSensitive: false).hasMatch(token)) {
         result.add(
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Divider(color: Colors.grey[300], height: 1),
           ),
         );
-        continue;
       }
 
-      // Parse text with inline formatting
-      final spans = _parseInlineHtml(trimmed, style);
-      if (spans.isNotEmpty) {
-        result.add(Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: RichText(text: TextSpan(children: spans)),
-        ));
-      }
+      cursor = match.end;
+    }
+
+    if (cursor < cleaned.length) {
+      _appendTextAsWidget(result, cleaned.substring(cursor).trim(), style);
     }
 
     return result;
+  }
+
+  void _appendTextAsWidget(
+    List<Widget> result,
+    String text,
+    TextStyle style,
+  ) {
+    if (text.isEmpty) return;
+
+    // Admin kadang kirim URL gambar langsung di textarea (tanpa <img> tag).
+    final directImageUrl = _extractDirectImageUrl(text);
+    if (directImageUrl != null) {
+      result.add(_buildImage(directImageUrl));
+      return;
+    }
+
+    final spans = _parseInlineHtml(text, style);
+    if (spans.isNotEmpty) {
+      result.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: RichText(text: TextSpan(children: spans)),
+        ),
+      );
+    }
+  }
+
+  String? _extractDirectImageUrl(String text) {
+    final trimmed = text.trim();
+    final singleUrl = RegExp(r'^https?://\S+$', caseSensitive: false);
+    if (!singleUrl.hasMatch(trimmed)) return null;
+
+    final likelyImage = RegExp(
+      r'\.(png|jpe?g|gif|webp|bmp|heic|heif)(\?.*)?$',
+      caseSensitive: false,
+    );
+
+    // Render as image when URL clearly points to image,
+    // or when it's a single direct URL (common backend image links).
+    if (likelyImage.hasMatch(trimmed) || !trimmed.contains(' ')) {
+      return trimmed;
+    }
+    return null;
+  }
+
+  Widget _buildImage(String url) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: CachedNetworkImage(
+          imageUrl: url,
+          maxHeightDiskCache: 500,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          placeholder: (_, __) => Container(
+            height: 120,
+            color: Colors.grey[200],
+            child: const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+          errorWidget: (_, __, ___) => Container(
+            height: 80,
+            color: Colors.grey[100],
+            child: Center(
+              child: Icon(Icons.broken_image, color: Colors.grey[400], size: 32),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   List<InlineSpan> _parseInlineHtml(String text, TextStyle baseStyle) {

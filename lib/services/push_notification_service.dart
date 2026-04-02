@@ -4,10 +4,13 @@ import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../config/api_config.dart';
+import '../app_keys.dart';
+import '../screens/notifications/notification_screen.dart';
 import 'api_service.dart';
 import 'device_id_service.dart';
 
@@ -121,6 +124,146 @@ class PushNotificationService {
         ),
       ),
     );
+
+    _showInAppNotificationSnackBar(
+      title: notification.title ?? 'Pemberitahuan',
+      body: notification.body ?? '',
+      imageUrl: _extractImageUrl(message),
+      notificationId: _extractNotificationIdFromPayload(message),
+    );
+  }
+
+  static String? _extractImageUrl(RemoteMessage message) {
+    final possibleKeys = [
+      'image',
+      'imageUrl',
+      'image_url',
+      'picture',
+      'thumbnail',
+      'photo',
+    ];
+
+    for (final key in possibleKeys) {
+      final value = message.data[key];
+      if (value != null && value.trim().startsWith('http')) {
+        return value.trim();
+      }
+    }
+
+    return null;
+  }
+
+  static void _showInAppNotificationSnackBar({
+    required String title,
+    required String body,
+    String? imageUrl,
+    String? notificationId,
+  }) {
+    void openNotificationScreen() {
+      final nav = navigatorKey.currentState;
+      if (nav == null) return;
+      nav.push(
+        MaterialPageRoute(
+          builder: (_) => NotificationScreen(
+            initialNotificationId: notificationId,
+          ),
+        ),
+      );
+    }
+
+    final messenger = scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(12),
+        backgroundColor: const Color(0xFF1E293B),
+        duration: const Duration(seconds: 4),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        content: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: openNotificationScreen,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (imageUrl != null && imageUrl.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    imageUrl,
+                    width: 52,
+                    height: 52,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 52,
+                      height: 52,
+                      color: Colors.white24,
+                      child: const Icon(Icons.image_not_supported, color: Colors.white),
+                    ),
+                  ),
+                )
+              else
+                const Icon(Icons.notifications_active, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (body.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        body,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        action: SnackBarAction(
+          label: 'Buka',
+          textColor: Colors.white,
+          onPressed: openNotificationScreen,
+        ),
+      ),
+    );
+  }
+
+  static String? _extractNotificationIdFromPayload(RemoteMessage message) {
+    final possibleKeys = [
+      'notificationId',
+      'notification_id',
+      'id',
+      'notifId',
+      'notif_id',
+    ];
+
+    for (final key in possibleKeys) {
+      final value = message.data[key];
+      if (value != null && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+
+    return null;
   }
 
   static Future<void> syncCurrentToken() async {

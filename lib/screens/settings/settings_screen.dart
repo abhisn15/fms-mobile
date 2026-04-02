@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -239,16 +240,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// Beri rating aplikasi:
-  /// - Jika dari Play Store: coba tampilkan dialog in-app dulu; lalu selalu buka halaman aplikasi di Play Store
-  ///   (dialog sering tidak muncul karena quota/bukan dari Play Store, jadi fallback ke halaman store).
-  /// - Jika bukan dari Play Store / gagal: langsung buka halaman aplikasi di Play Store.
+  /// - Coba tampilkan dialog in-app review dulu.
+  /// - Setelah itu buka listing store sesuai platform:
+  ///   App Store untuk iOS, Play Store untuk Android.
   Future<void> _rateApp() async {
+    final isIOS = defaultTargetPlatform == TargetPlatform.iOS;
+    final storeName = isIOS ? 'App Store' : 'Play Store';
+
     bool tryInAppFirst = false;
     try {
       tryInAppFirst = await _inAppReview.isAvailable();
       if (tryInAppFirst) {
         await _inAppReview.requestReview();
-        // Dialog mungkin tidak muncul (quota / kebijakan Google). Tetap buka store setelah jeda singkat.
+        // Dialog mungkin tidak muncul (kuota/kebijakan store). Tetap coba buka listing store.
         await Future.delayed(const Duration(milliseconds: 1500));
         if (!mounted) return;
       }
@@ -256,7 +260,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       debugPrint('[Settings] In-app review not available: $e');
     }
 
-    // Selalu buka halaman aplikasi di Play Store agar user bisa beri rating/ulasan di sana.
+    // Selalu buka halaman aplikasi di store sesuai platform.
     bool opened = false;
     try {
       await _inAppReview.openStoreListing();
@@ -268,15 +272,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!opened) {
       final packageName = _packageInfo?.packageName;
       if (packageName != null && packageName.isNotEmpty) {
-        final marketUri = Uri.parse('market://details?id=$packageName');
-        try {
-          opened = await launchUrl(marketUri, mode: LaunchMode.externalApplication);
-        } catch (_) {}
-        if (!opened) {
-          final webUri = Uri.parse('https://play.google.com/store/apps/details?id=$packageName');
+        if (isIOS) {
+          final webUri = Uri.parse('https://apps.apple.com/id/search?term=$packageName');
           try {
             opened = await launchUrl(webUri, mode: LaunchMode.externalApplication);
           } catch (_) {}
+        } else {
+          final marketUri = Uri.parse('market://details?id=$packageName');
+          try {
+            opened = await launchUrl(marketUri, mode: LaunchMode.externalApplication);
+          } catch (_) {}
+          if (!opened) {
+            final webUri = Uri.parse('https://play.google.com/store/apps/details?id=$packageName');
+            try {
+              opened = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+            } catch (_) {}
+          }
         }
       }
     }
@@ -284,15 +295,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     if (opened) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Buka Play Store. Silakan tap "Beri rating" atau "Tulis ulasan" di halaman aplikasi.'),
+        SnackBar(
+          content: Text('Membuka $storeName. Silakan tap "Beri rating" atau "Tulis ulasan" di halaman aplikasi.'),
           duration: Duration(seconds: 4),
         ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Gagal membuka Play Store. Pastikan Play Store terpasang atau buka tautan dari browser.'),
+        SnackBar(
+          content: Text('Gagal membuka $storeName. Pastikan store tersedia atau buka tautan dari browser.'),
           backgroundColor: Colors.red,
           duration: Duration(seconds: 4),
         ),

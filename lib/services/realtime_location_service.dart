@@ -495,7 +495,7 @@ class RealtimeLocationService {
   Future<void> openAppSettings() async {
     debugPrint('[RealtimeLocationService] Opening app settings...');
     try {
-      await openAppSettings();
+      await geolocator.Geolocator.openAppSettings();
       debugPrint('[RealtimeLocationService] App settings opened');
     } catch (e) {
       debugPrint('[RealtimeLocationService] Failed to open app settings: $e');

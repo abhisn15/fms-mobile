@@ -33,9 +33,7 @@ import 'widgets/update_dialog.dart';
 import 'models/version_model.dart';
 import 'services/error_reporting_service.dart';
 import 'services/global_update_checker.dart';
-
-// Global navigator key untuk akses navigator dari mana saja
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+import 'app_keys.dart';
 
 Future<void> main() async {
   runZonedGuarded(
@@ -131,6 +129,7 @@ class _MyAppState extends State<MyApp> {
           title: 'Atenim Workforce',
           debugShowCheckedModeBanner: false,
           navigatorKey: navigatorKey, // Global navigator key untuk auto logout
+          scaffoldMessengerKey: scaffoldMessengerKey,
           navigatorObservers: const [],
           localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,

@@ -37,7 +37,9 @@ class NotificationItem {
 }
 
 class NotificationScreen extends StatefulWidget {
-  const NotificationScreen({super.key});
+  final String? initialNotificationId;
+
+  const NotificationScreen({super.key, this.initialNotificationId});
 
   @override
   State<NotificationScreen> createState() => _NotificationScreenState();
@@ -51,6 +53,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   int _page = 1;
   int _totalPages = 1;
   final ScrollController _scrollController = ScrollController();
+  bool _openedInitialNotification = false;
 
   @override
   void initState() {
@@ -98,6 +101,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         _totalPages = data['meta']['totalPages'] as int? ?? 1;
         _isLoading = false;
       });
+      _openInitialNotificationIfNeeded();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -105,6 +109,24 @@ class _NotificationScreenState extends State<NotificationScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  void _openInitialNotificationIfNeeded() {
+    if (_openedInitialNotification) return;
+    final targetId = widget.initialNotificationId;
+    if (targetId == null || targetId.isEmpty) return;
+
+    final target = _notifications.cast<NotificationItem?>().firstWhere(
+          (item) => item?.id == targetId,
+          orElse: () => null,
+        );
+    if (target == null) return;
+
+    _openedInitialNotification = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showNotificationDetail(target);
+    });
   }
 
   Future<void> _loadMore() async {
